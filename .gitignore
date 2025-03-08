@@ -1,0 +1,53 @@
+# Python virtual environment
+venv/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Models and large files
+*.tflite
+*.pb
+models/
+
+# Video files
+*.mp4
+*.avi
+*.mov
+*.mkv
+videos/
+
+# Output files
+output/
+*.jpg
+*.png
+
+# Log files
+*.log
+logs/
+
+# Environment variables
+.env
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Large files (more than 20MB)
+# Use git lfs for these if needed
+**/*.large
+**/*.data
+**/*.weights
+**/*.h5
+**/*.hdf5
+**/*.tar
+**/*.tar.gz
+**/*.zip 
