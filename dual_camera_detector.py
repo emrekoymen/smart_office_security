@@ -106,24 +106,34 @@ class CameraProcessor:
                 logger.error(f"Camera {self.camera_id}: Could not open video source: {self.source}")
                 return False
             
-            # Get camera properties
-            self.frame_width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-            self.frame_height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            self.fps = self.cap.get(cv2.CAP_PROP_FPS)
+            # Set buffer size to minimize latency
+            self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
             
-            # If FPS is not available, use default
-            if self.fps <= 0:
-                self.fps = 30.0
+            # Try to set resolution to 300x300 for better performance
+            original_width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            original_height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             
             # Set resolution to 300x300 for better performance and consistency with model input
             self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 300)
             self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 300)
             
-            # Update frame dimensions after setting
+            # Get actual resolution after setting (may not be exactly what we requested)
             self.frame_width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             self.frame_height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             
-            logger.info(f"Camera {self.camera_id}: Opened {self.frame_width}x{self.frame_height} @ {self.fps} FPS")
+            # Get FPS
+            self.fps = self.cap.get(cv2.CAP_PROP_FPS)
+            if self.fps <= 0:
+                self.fps = 30.0
+            
+            # Try to set higher FPS for webcams
+            if isinstance(self.source, int) or (isinstance(self.source, str) and self.source.isdigit()):
+                self.cap.set(cv2.CAP_PROP_FPS, 30)
+                actual_fps = self.cap.get(cv2.CAP_PROP_FPS)
+                if actual_fps > 0:
+                    self.fps = actual_fps
+            
+            logger.info(f"Camera {self.camera_id}: Opened {self.frame_width}x{self.frame_height} @ {self.fps} FPS (original: {original_width}x{original_height})")
             return True
         except Exception as e:
             logger.error(f"Camera {self.camera_id}: Error opening camera: {e}")
@@ -165,6 +175,8 @@ class CameraProcessor:
     
     def capture_frames(self):
         """Thread function to capture frames from the camera"""
+        frame_skip = 0  # For frame skipping if needed
+        
         while self.running:
             if not self.cap or not self.cap.isOpened():
                 logger.error(f"Camera {self.camera_id}: Camera disconnected")
@@ -177,30 +189,44 @@ class CameraProcessor:
                 time.sleep(0.1)
                 continue
             
-            # If frame queue is full, remove oldest frame
-            if self.frame_queue.full():
+            # Skip frames if queue is getting full to maintain real-time processing
+            if self.frame_queue.qsize() > 1:
+                frame_skip += 1
+                if frame_skip % 2 != 0:  # Skip every other frame when queue is full
+                    continue
+            else:
+                frame_skip = 0
+            
+            # Clear queue if it's getting too full to prevent lag
+            if self.frame_queue.qsize() > 2:
                 try:
-                    self.frame_queue.get_nowait()
+                    while self.frame_queue.qsize() > 1:
+                        self.frame_queue.get_nowait()
                 except queue.Empty:
                     pass
             
             try:
                 self.frame_queue.put(frame, block=False)
             except queue.Full:
+                # If queue is full, don't wait - just drop the frame
                 pass
     
     def process_frames(self):
         """Thread function to process frames from the queue"""
         while self.running:
             try:
-                frame = self.frame_queue.get(timeout=0.5)
+                frame = self.frame_queue.get(timeout=0.01)  # Shorter timeout for responsiveness
             except queue.Empty:
                 continue
             
             start_time = time.time()
             
-            # Resize frame for detection
-            detection_frame = cv2.resize(frame, self.input_size)
+            # Resize frame for detection - only if needed
+            h, w = frame.shape[:2]
+            if h != self.input_size[1] or w != self.input_size[0]:
+                detection_frame = cv2.resize(frame, self.input_size, interpolation=cv2.INTER_AREA)
+            else:
+                detection_frame = frame
             
             # Run detection
             detections = self.detect_objects(detection_frame)
@@ -208,29 +234,27 @@ class CameraProcessor:
             # Filter for persons
             person_detections = [d for d in detections if d[0] == self.person_class_id]
             
-            # Draw detection boxes
-            result_frame = frame.copy()
-            for detection in person_detections:
-                class_id, score, bbox = detection
-                label = self.labels.get(class_id, f"Class {class_id}")
-                result_frame = draw_detection_box(result_frame, bbox, label, score)
+            # Draw detection boxes - only if there are detections to improve performance
+            if person_detections:
+                result_frame = frame.copy()
+                for detection in person_detections:
+                    class_id, score, bbox = detection
+                    label = self.labels.get(class_id, f"Class {class_id}")
+                    result_frame = draw_detection_box(result_frame, bbox, label, score)
+                    
+                    # Log detection coordinates for debugging
+                    x, y, w, h = bbox
+                    logger.info(f"Drawing box at: ({x}, {y}), ({x+w}, {y+h}), dimensions: {w}x{h}")
+            else:
+                result_frame = frame
             
             # Update FPS counter
             self.fps_counter.update()
             fps = self.fps_counter.get_fps()
             
-            # Add FPS text to frame
+            # Add FPS text to frame - use efficient text rendering
             cv2.putText(result_frame, f"FPS: {fps:.1f}", (10, 30), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-            
-            # Add camera ID to frame
-            cv2.putText(result_frame, f"Camera {self.camera_id}", (10, 70), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-            
-            # Add TPU/CPU mode indicator
-            mode = "TPU" if HAVE_CORAL and self.interpreter else "CPU"
-            cv2.putText(result_frame, f"Mode: {mode}", (10, 110), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
             
             # Calculate processing time
             processing_time = time.time() - start_time
@@ -251,16 +275,18 @@ class CameraProcessor:
                 'fps': fps
             }
             
-            # If result queue is full, remove oldest result
-            if self.result_queue.full():
+            # Clear result queue if it's getting too full
+            if self.result_queue.qsize() > 1:
                 try:
-                    self.result_queue.get_nowait()
+                    while self.result_queue.qsize() > 0:
+                        self.result_queue.get_nowait()
                 except queue.Empty:
                     pass
             
             try:
                 self.result_queue.put(result, block=False)
             except queue.Full:
+                # If queue is full, don't wait - just drop the result
                 pass
     
     def detect_objects(self, frame):
@@ -288,8 +314,19 @@ class CameraProcessor:
     
     def get_latest_result(self):
         """Get the latest processed result"""
+        # More efficient way to get the latest result
+        # Only get the most recent frame instead of draining the queue
         try:
-            return self.result_queue.get(block=False)
+            # First check if there's anything in the queue
+            if self.result_queue.qsize() > 1:
+                # If multiple results, drain all but the last one
+                while self.result_queue.qsize() > 1:
+                    self.result_queue.get_nowait()
+                return self.result_queue.get_nowait()
+            elif self.result_queue.qsize() == 1:
+                return self.result_queue.get_nowait()
+            else:
+                return None
         except queue.Empty:
             return None
 
@@ -395,10 +432,34 @@ class DualCameraDetector:
         # Create window if display is enabled
         if not self.args.no_display:
             cv2.namedWindow('Dual Camera Person Detection', cv2.WINDOW_NORMAL)
-            # Set window size to 640x480 for display
-            cv2.resizeWindow('Dual Camera Person Detection', 640, 480)
+            # Set window size to 1280x480 for dual 640x480 display
+            cv2.resizeWindow('Dual Camera Person Detection', 1280, 480)
+        
+        # For performance tracking
+        fps_update_interval = 0.5  # Update FPS every half second
+        last_fps_update = time.time()
+        display_fps = 0
+        
+        # For frame rate control
+        target_display_fps = 30  # Target display FPS
+        min_frame_time = 1.0 / target_display_fps
+        last_frame_time = time.time()
+        
+        # Pre-allocate display frame to avoid repeated memory allocations
+        display_frame = None
         
         while self.running:
+            # Limit frame rate for display to reduce CPU usage
+            current_time = time.time()
+            elapsed_since_last_frame = current_time - last_frame_time
+            
+            if elapsed_since_last_frame < min_frame_time:
+                # Sleep to maintain target frame rate
+                time.sleep(max(0, min_frame_time - elapsed_since_last_frame))
+                continue
+            
+            last_frame_time = current_time
+            
             # Get results from both cameras
             result1 = self.camera1.get_latest_result()
             
@@ -410,68 +471,71 @@ class DualCameraDetector:
             
             # Skip if either result is None
             if result1 is None or result2 is None:
-                time.sleep(0.01)
+                time.sleep(0.001)  # Very short sleep to prevent CPU spinning
                 continue
             
-            # Combine frames side by side
+            # Get frames from results
             frame1 = result1['frame']
             frame2 = result2['frame']
             
-            # Ensure both frames are exactly 300x300
-            frame1 = cv2.resize(frame1, (300, 300))
-            frame2 = cv2.resize(frame2, (300, 300))
-            
-            # Create combined frame
-            combined_frame = np.hstack((frame1, frame2))
-            
-            # Add title to the combined frame
-            title_bar = np.zeros((30, combined_frame.shape[1], 3), dtype=np.uint8)
-            cv2.putText(title_bar, "Dual Camera Person Detection", (10, 20), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-            
-            # Add camera labels
-            cv2.putText(frame1, f"Camera 1", (10, 20), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
-            cv2.putText(frame2, f"Camera 2", (10, 20), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
-            
-            # Combine title bar with frames
-            display_frame = np.vstack((title_bar, combined_frame))
-            
-            # Resize display frame to 640x480 for better viewing
-            display_frame = cv2.resize(display_frame, (640, 480))
-            
             # Check for detections and trigger alerts
-            for result in [result1, result2]:
+            for result, camera_id in [(result1, 1), (result2, 2)]:
                 for detection in result['detections']:
                     class_id, score, bbox = detection
                     if class_id == self.args.person_class_id and score >= self.args.threshold:
                         # Log detection
-                        self.logger.log_detection("Person", score)
+                        logger.info(f"Detected: Person (Confidence: {score:.2f})")
                         
                         # Trigger alert
-                        self.alert_system.trigger_alert(score)
+                        if hasattr(self, 'alert_system'):
+                            self.alert_system.trigger_alert(score)
                         
                         # Save detection image if configured
-                        if self.args.save_detections:
-                            save_detection_image(display_frame, self.args.output_dir)
+                        if self.args.save_detections and hasattr(self, 'save_detection_image'):
+                            self.save_detection_image(frame1 if camera_id == 1 else frame2, self.args.output_dir)
             
-            # Display frame
-            if not self.args.no_display:
-                cv2.imshow('Dual Camera Person Detection', display_frame)
-                key = cv2.waitKey(1) & 0xFF
-                if key == ord('q'):
-                    break
-            
-            # Save video
-            if self.args.save_video:
-                if not self.video_writer_initialized:
-                    self.initialize_video_writer(display_frame)
+            # Create display frame
+            if not self.args.no_display or self.args.save_video:
+                # Resize both frames to 640x480 for display - use INTER_NEAREST for speed
+                frame1_display = cv2.resize(frame1, (640, 480), interpolation=cv2.INTER_NEAREST)
+                frame2_display = cv2.resize(frame2, (640, 480), interpolation=cv2.INTER_NEAREST)
                 
-                if self.video_writer:
-                    self.video_writer.write(display_frame)
-            
-            frame_count += 1
+                # Add camera labels
+                cv2.putText(frame1_display, "Camera 1", (10, 30), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                cv2.putText(frame2_display, "Camera 2", (10, 30), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                
+                # Combine frames side by side
+                display_frame = np.hstack((frame1_display, frame2_display))
+                
+                # Calculate and display FPS
+                current_time = time.time()
+                frame_count += 1
+                
+                if current_time - last_fps_update >= fps_update_interval:
+                    elapsed = current_time - last_fps_update
+                    display_fps = 1.0 / elapsed if elapsed > 0 else 0
+                    last_fps_update = current_time
+                
+                # Add FPS to the display frame
+                cv2.putText(display_frame, f"Display FPS: {display_fps:.1f}", (10, 470), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                
+                # Display frame
+                if not self.args.no_display:
+                    cv2.imshow('Dual Camera Person Detection', display_frame)
+                    key = cv2.waitKey(1) & 0xFF
+                    if key == ord('q'):
+                        break
+                
+                # Save video
+                if self.args.save_video:
+                    if not hasattr(self, 'video_writer_initialized') or not self.video_writer_initialized:
+                        self.initialize_video_writer(display_frame)
+                    
+                    if hasattr(self, 'video_writer') and self.video_writer:
+                        self.video_writer.write(display_frame)
             
             # Print stats every 100 frames
             if frame_count % 100 == 0:
@@ -482,9 +546,6 @@ class DualCameraDetector:
                 # Log detection counts
                 logger.info(f"Camera 1: {self.camera1.total_detections} detections in {self.camera1.total_frames} frames")
                 logger.info(f"Camera 2: {self.camera2.total_detections} detections in {self.camera2.total_frames} frames")
-                
-                # Log performance
-                self.logger.log_performance(fps, elapsed_time / frame_count)
         
         # Clean up
         self.cleanup()
