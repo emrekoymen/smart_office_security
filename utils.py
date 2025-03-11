@@ -147,18 +147,32 @@ def save_detection_image(frame, output_dir="detections"):
 
 def draw_detection_box(frame, bbox, label, score):
     """Draw bounding box and label on the frame."""
-    ymin, xmin, ymax, xmax = bbox
+    # Check if bbox is a list or a BBox object
+    if hasattr(bbox, 'ymin'):  # It's a BBox object
+        ymin, xmin, ymax, xmax = bbox.ymin, bbox.xmin, bbox.ymax, bbox.xmax
+    else:  # It's a list [ymin, xmin, ymax, xmax]
+        ymin, xmin, ymax, xmax = bbox
     
-    # Convert normalized coordinates to pixel values
+    # Get frame dimensions
     height, width, _ = frame.shape
-    xmin = int(xmin * width)
-    xmax = int(xmax * width)
-    ymin = int(ymin * height)
-    ymax = int(ymax * height)
     
-    # Calculate box dimensions
-    box_width = xmax - xmin
-    box_height = ymax - ymin
+    # Check if coordinates are normalized (between 0 and 1) or absolute
+    # If any coordinate is > 1, assume they are already in pixel coordinates
+    if xmin <= 1 and ymin <= 1 and xmax <= 1 and ymax <= 1:
+        # Convert normalized coordinates to pixel values
+        xmin = int(xmin * width)
+        xmax = int(xmax * width)
+        ymin = int(ymin * height)
+        ymax = int(ymax * height)
+    else:
+        # Already in pixel coordinates, just convert to int
+        xmin = int(xmin)
+        xmax = int(xmax)
+        ymin = int(ymin)
+        ymax = int(ymax)
+    
+    # Debug print
+    print(f"Drawing box at: ({xmin}, {ymin}), ({xmax}, {ymax}), dimensions: {width}x{height}")
     
     # Draw bounding box with thicker lines
     cv2.rectangle(frame, (xmin, ymin), (xmax, ymax), (0, 255, 0), 3)

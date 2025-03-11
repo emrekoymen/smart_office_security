@@ -49,19 +49,21 @@ First, ensure your Conda environment is activated:
 conda activate smart_office
 ```
 
-### Smart Detection Mode (Recommended)
+### Running the Detection System
 
-The smart detector automatically chooses the best output method based on your environment:
-- If a display is available, it shows the video with detection boxes
-- If no display is available, it saves the complete processed video as an MP4 file
+The system provides a single unified pipeline with options for display, video saving, and hardware acceleration:
 
 ```
 ./run_smart.sh
 ```
 
-This will run the detector with default settings (webcam input).
+This will run the detector with default settings:
+- Uses webcam input
+- Displays video feed with detection boxes
+- Uses Edge TPU if available (falls back to CPU if not)
+- Does not save video output
 
-#### Smart Mode Command-line Options
+#### Command-line Options
 
 ```
 Usage: ./run_smart.sh [options]
@@ -70,119 +72,70 @@ Options:
   -v, --video FILE      Use a video file instead of webcam
   -c, --camera NUM      Use a specific camera number (default: 0)
   -t, --threshold NUM   Set detection threshold (0.0-1.0, default: 0.5)
-  -s, --save            Force saving video even if display is available
+  -n, --no-display      Disable display (headless mode)
+  -s, --save           Save processed video
   -o, --output DIR      Directory to save output files (default: output/)
-```
-
-### Display Mode (requires a GUI)
-
-If you specifically want to use the display-only mode:
-
-```
-./run_detection.sh
-```
-
-This will run the detector with default settings (webcam input with display).
-
-#### Display Mode Command-line Options
-
-```
-Usage: ./run_detection.sh [options]
-Options:
-  -h, --help            Show help message
-  -v, --video FILE      Use a video file instead of webcam
-  -c, --camera NUM      Use a specific camera number (default: 0)
-  -t, --threshold NUM   Set detection threshold (0.0-1.0, default: 0.5)
-  -n, --no-display      Don't display video feed
-  -s, --save            Save frames with detected persons
-  -o, --output DIR      Directory to save output frames (default: output/)
-```
-
-### Headless Mode (no GUI required)
-
-For servers or environments without a display, you can also use the dedicated headless mode:
-
-```
-./run_headless.sh
-```
-
-The headless mode saves detection frames with bounding boxes to the output directory.
-
-#### Headless Command-line Options
-
-```
-Usage: ./run_headless.sh [options]
-Options:
-  -h, --help            Show help message
-  -v, --video FILE      Use a video file instead of webcam
-  -c, --camera NUM      Use a specific camera number (default: 0)
-  -t, --threshold NUM   Set detection threshold (0.0-1.0, default: 0.5)
-  -a, --all             Save all frames, not just ones with detections
-  -o, --output DIR      Directory to save output frames (default: output/)
+  --cpu                Force CPU mode (no TPU)
 ```
 
 ### Examples
 
-1. Run with the webcam (smart mode):
+1. Run with default settings (webcam, display enabled):
    ```
    ./run_smart.sh
    ```
 
-2. Run with a specific video file (smart mode):
+2. Run with a specific video file:
    ```
    ./run_smart.sh -v videos/sample.mp4
    ```
 
-3. Run with a specific video file and force saving the video:
+3. Run in headless mode and save the video:
    ```
-   ./run_smart.sh -v videos/sample.mp4 -s
-   ```
-
-4. Run the display-only mode with a video file:
-   ```
-   ./run_detection.sh -v videos/sample.mp4
+   ./run_smart.sh -n -s
    ```
 
-5. Run the headless mode with a video file:
+4. Run with a specific video file and force CPU mode:
    ```
-   ./run_headless.sh -v videos/sample.mp4
+   ./run_smart.sh -v videos/sample.mp4 --cpu
    ```
 
 ## Viewing Detection Results
 
-Depending on the mode you use, the results will be available in different formats:
+The system can output results in two ways:
 
-1. **Display Mode**: You'll see the video feed with green bounding boxes around detected people, with confidence scores displayed above each detection.
+1. **Display Mode** (default): Shows live video feed with:
+   - Green bounding boxes around detected people
+   - Confidence scores above each detection
+   - Current FPS and processing mode (TPU/CPU)
 
-2. **Smart Mode with Display**: Same as display mode, showing live video with bounding boxes.
-
-3. **Smart Mode without Display**: An MP4 video file will be saved to the output directory with all detections marked. The filename will include the source and timestamp, e.g., `sample_processed_1637245896.mp4`.
-
-4. **Headless Mode**: Individual frames with detections will be saved as JPG files in the output directory.
+2. **Video Saving**: When enabled with `-s`, saves a processed video file that includes:
+   - All frames with detection boxes and annotations
+   - Filename includes source and timestamp (e.g., `sample_processed_1637245896.mp4`)
 
 ## Performance Metrics
 
-The system measures and displays/logs real-time FPS (frames per second) during operation. In headless mode, the FPS is printed to the console periodically.
+The system measures and displays:
+- Real-time FPS (frames per second)
+- Processing mode (TPU or CPU)
+- Total frames processed
+- Number of frames with detections
+- Average FPS for the session
 
 ## Alert System
 
 When a person is detected with sufficient confidence (above the threshold):
-
 1. The detection is logged to the console with confidence score
-2. The frame with the detection is included in the output (video or images)
-3. In display mode, a desktop notification is displayed (if supported)
+2. The frame with the detection is included in the output video (if saving enabled)
+3. A desktop notification is displayed (if supported)
 
 ## Project Structure
 
-- `detector.py`: Display mode detection script
-- `detector_headless.py`: Headless version for environments without display
-- `smart_detector.py`: Smart detector that combines display and video saving
+- `smart_detector.py`: Main detection script with unified pipeline
 - `utils.py`: Utility functions for video processing and alerting
 - `requirements.txt`: List of Python dependencies
 - `setup_coral.sh`: Script to set up the Edge TPU runtime and download models
-- `run_detection.sh`: Script to run the detector with display
-- `run_headless.sh`: Script to run the detector in headless mode
-- `run_smart.sh`: Script to run the smart detector
+- `run_smart.sh`: Script to run the detector with various options
 - `.gitignore`: Specifies files to be ignored by git
 
 ## Troubleshooting
@@ -195,21 +148,20 @@ This project requires Python 3.8 specifically for compatibility with the Coral E
 
 ### Display Issues
 
-If you encounter display errors like:
-```
-qt.qpa.xcb: could not connect to display
-```
-Just use the smart detector, which will automatically fall back to saving the video:
-```
-./run_smart.sh -v videos/sample.mp4
-```
+If you encounter display errors:
+1. Try running in headless mode with video saving:
+   ```
+   ./run_smart.sh -n -s
+   ```
+2. Check if your system has a display server running
+3. Verify X11 forwarding if running remotely
 
 ### Video Saving Issues
 
 If you have problems with the saved video:
 1. Make sure you have the necessary codecs installed: `sudo apt-get install ffmpeg`
-2. Try different codec options in the script (e.g., 'XVID' instead of 'mp4v')
-3. Check disk space and permissions for the output directory
+2. Check disk space and permissions for the output directory
+3. Try different codec options in the script (e.g., 'XVID' instead of 'mp4v')
 
 ### Edge TPU Device
 
@@ -228,5 +180,5 @@ For further assistance, refer to the Google Coral documentation: https://coral.a
 - Implemented alert system and performance monitoring
 - Added command-line interface and run script
 - Updated for Conda environment compatibility with Python 3.8 for Coral Edge TPU support
-- Added headless mode for environments without display
-- Added smart detector that can display or save video based on environment 
+- Unified detection pipeline with flexible output options
+- Added automatic TPU/CPU fallback mechanism 

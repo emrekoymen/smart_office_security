@@ -21,7 +21,9 @@ fi
 VIDEO_SOURCE="0"  # Default to webcam
 THRESHOLD="0.5"
 OUTPUT_DIR="output"
-FORCE_SAVE=false
+ENABLE_DISPLAY=true  # Default to display mode
+SAVE_VIDEO=false  # Default to not saving video
+FORCE_CPU=false  # Default to using TPU with CPU fallback
 
 # Display help information
 show_help() {
@@ -31,13 +33,16 @@ show_help() {
     echo "  -v, --video FILE      Use a video file instead of webcam"
     echo "  -c, --camera NUM      Use a specific camera number (default: 0)"
     echo "  -t, --threshold NUM   Set detection threshold (0.0-1.0, default: 0.5)"
-    echo "  -s, --save            Force saving video even if display is available"
+    echo "  -n, --no-display      Disable display (headless mode)"
+    echo "  -s, --save           Save processed video"
     echo "  -o, --output DIR      Directory to save output files (default: output/)"
+    echo "  --cpu                Force CPU mode (no TPU)"
     echo
     echo "Examples:"
-    echo "  $0                    Run with webcam"
+    echo "  $0                    Run with webcam, display enabled (default)"
     echo "  $0 -v videos/sample.mp4    Run with specific video file"
-    echo "  $0 -t 0.7 -s          Run with higher threshold and force video saving"
+    echo "  $0 -n -s             Run in headless mode and save video"
+    echo "  $0 --cpu             Force CPU mode"
     exit 0
 }
 
@@ -59,13 +64,21 @@ while [[ $# -gt 0 ]]; do
             THRESHOLD="$2"
             shift 2
             ;;
+        -n|--no-display)
+            ENABLE_DISPLAY=false
+            shift
+            ;;
         -s|--save)
-            FORCE_SAVE=true
+            SAVE_VIDEO=true
             shift
             ;;
         -o|--output)
             OUTPUT_DIR="$2"
             shift 2
+            ;;
+        --cpu)
+            FORCE_CPU=true
+            shift
             ;;
         *)
             echo "Unknown option: $1"
@@ -80,21 +93,39 @@ if [ ! -f "models/ssd_mobilenet_v2_coco_quant_postprocess_edgetpu.tflite" ]; the
     ./setup_coral.sh
 fi
 
-# Create output directory
-mkdir -p "$OUTPUT_DIR"
+# Create output directory if saving video
+if $SAVE_VIDEO; then
+    mkdir -p "$OUTPUT_DIR"
+fi
 
 # Build command with appropriate flags
 CMD="python smart_detector.py --source \"$VIDEO_SOURCE\" --threshold $THRESHOLD --output-dir \"$OUTPUT_DIR\""
-if $FORCE_SAVE; then
-    CMD="$CMD --force-save"
+
+# Add display flag
+if ! $ENABLE_DISPLAY; then
+    CMD="$CMD --no-display"
+fi
+
+# Add save video flag
+if $SAVE_VIDEO; then
+    CMD="$CMD --save-video"
+fi
+
+# Add force CPU flag
+if $FORCE_CPU; then
+    CMD="$CMD --force-cpu"
 fi
 
 # Run the detector
 echo "Starting smart person detection..."
 echo "Video source: $VIDEO_SOURCE"
 echo "Threshold: $THRESHOLD"
-echo "Output directory: $OUTPUT_DIR"
-echo "Force save video: $FORCE_SAVE"
+echo "Display enabled: $ENABLE_DISPLAY"
+echo "Save video: $SAVE_VIDEO"
+echo "Force CPU mode: $FORCE_CPU"
+if $SAVE_VIDEO; then
+    echo "Output directory: $OUTPUT_DIR"
+fi
 
 # Make the script executable if not already
 chmod +x smart_detector.py
