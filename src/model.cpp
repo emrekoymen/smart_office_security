@@ -1,14 +1,18 @@
 #include "model.h"
 #include <fstream>
 #include <iostream>
+
+#ifndef DISABLE_TENSORFLOW
 #include <tensorflow/lite/kernels/register.h>
 #include <tensorflow/lite/tools/delegates/delegate_provider.h>
+#endif
 
 Model::Model(const std::string& modelPath, const std::string& labelsPath, bool forceCPU)
     : usingTPU(false), inputHeight(300), inputWidth(300), inputChannels(3) {
     
     std::cout << "Loading model from " << modelPath << std::endl;
     
+#ifndef DISABLE_TENSORFLOW
     // Load the model
     model = tflite::FlatBufferModel::BuildFromFile(modelPath.c_str());
     if (!model) {
@@ -55,6 +59,9 @@ Model::Model(const std::string& modelPath, const std::string& labelsPath, bool f
         inputWidth = inputTensor->dims->data[2];
         inputChannels = inputTensor->dims->data[3];
     }
+#else
+    std::cout << "TensorFlow Lite is disabled. Using mock implementation." << std::endl;
+#endif
     
     std::cout << "Model input dimensions: " << inputWidth << "x" << inputHeight 
               << "x" << inputChannels << std::endl;
@@ -81,6 +88,10 @@ std::vector<Detection> Model::processImage(const cv::Mat& frame, float threshold
     float widthScale = static_cast<float>(origWidth) / inputWidth;
     float heightScale = static_cast<float>(origHeight) / inputHeight;
     
+    // Create detection objects
+    std::vector<Detection> detections;
+    
+#ifndef DISABLE_TENSORFLOW
     // Resize and preprocess the image
     cv::Mat resizedFrame;
     cv::resize(frame, resizedFrame, cv::Size(inputWidth, inputHeight));
@@ -114,7 +125,6 @@ std::vector<Detection> Model::processImage(const cv::Mat& frame, float threshold
     int numDetected = static_cast<int>(*numDetections);
     
     // Create detection objects
-    std::vector<Detection> detections;
     for (int i = 0; i < numDetected; i++) {
         float score = outputScores[i];
         
@@ -138,6 +148,23 @@ std::vector<Detection> Model::processImage(const cv::Mat& frame, float threshold
             detections.emplace_back(BBox(ymin, xmin, ymax, xmax), classId, score);
         }
     }
+#else
+    // Mock implementation - create a fake detection in the center of the frame
+    // This is just for testing camera functionality
+    if (rand() % 10 < 3) {  // 30% chance of detection
+        float centerX = origWidth / 2.0f;
+        float centerY = origHeight / 2.0f;
+        float width = origWidth / 4.0f;
+        float height = origHeight / 4.0f;
+        
+        float xmin = centerX - width / 2.0f;
+        float ymin = centerY - height / 2.0f;
+        float xmax = centerX + width / 2.0f;
+        float ymax = centerY + height / 2.0f;
+        
+        detections.emplace_back(BBox(ymin, xmin, ymax, xmax), 0, 0.85f);
+    }
+#endif
     
     return detections;
 }
@@ -146,6 +173,9 @@ bool Model::loadLabels(const std::string& path) {
     std::ifstream file(path);
     if (!file.is_open()) {
         std::cerr << "Failed to open labels file: " << path << std::endl;
+        
+        // Add a default "Person" label for testing
+        labels[0] = "Person";
         return false;
     }
     
@@ -158,6 +188,11 @@ bool Model::loadLabels(const std::string& path) {
         // Add to labels map
         labels[lineNum] = line;
         lineNum++;
+    }
+    
+    // If no labels were loaded, add a default "Person" label
+    if (labels.empty()) {
+        labels[0] = "Person";
     }
     
     std::cout << "Loaded " << labels.size() << " labels" << std::endl;

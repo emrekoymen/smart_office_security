@@ -4,10 +4,15 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <map>
 #include <opencv2/opencv.hpp>
+
+// Conditionally include TensorFlow Lite headers
+#ifndef DISABLE_TENSORFLOW
 #include <tensorflow/lite/interpreter.h>
 #include <tensorflow/lite/model.h>
 #include <edgetpu.h>
+#endif
 
 /**
  * @brief Bounding box class for object detection
@@ -83,13 +88,6 @@ public:
     bool isUsingTPU() const { return usingTPU; }
 
 private:
-    // TFLite model and interpreter
-    std::unique_ptr<tflite::FlatBufferModel> model;
-    std::unique_ptr<tflite::Interpreter> interpreter;
-    
-    // Edge TPU context
-    std::shared_ptr<edgetpu::EdgeTpuContext> edgetpuContext;
-    
     // Labels map
     std::map<int, std::string> labels;
     
@@ -100,6 +98,15 @@ private:
     int inputHeight;
     int inputWidth;
     int inputChannels;
+
+#ifndef DISABLE_TENSORFLOW
+    // TFLite model and interpreter
+    std::unique_ptr<tflite::FlatBufferModel> model;
+    std::unique_ptr<tflite::Interpreter> interpreter;
+    
+    // Edge TPU context
+    std::shared_ptr<edgetpu::EdgeTpuContext> edgetpuContext;
+#endif
 };
 
 #endif // MODEL_H 

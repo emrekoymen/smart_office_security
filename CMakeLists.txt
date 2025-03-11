@@ -15,8 +15,12 @@ include_directories(
     ${OpenCV_INCLUDE_DIRS}
 )
 
-# Add Edge TPU library paths (adjust as needed)
-set(EDGETPU_LIBRARY_PATH "/usr/lib/libedgetpu.so.1")
+# For now, let's continue using the mock implementation
+# until we can properly integrate TensorFlow Lite
+add_definitions(-DDISABLE_TENSORFLOW)
+
+# Edge TPU library path
+set(EDGETPU_LIBRARY_PATH "/usr/lib/x86_64-linux-gnu/libedgetpu.so")
 
 # Source files
 file(GLOB SOURCES "src/*.cpp")
@@ -28,7 +32,8 @@ add_executable(dual_camera_detector ${SOURCES})
 target_link_libraries(dual_camera_detector
     ${OpenCV_LIBS}
     ${CMAKE_THREAD_LIBS_INIT}
-    ${EDGETPU_LIBRARY_PATH}
+    # Uncomment the line below when ready to use Edge TPU
+    # ${EDGETPU_LIBRARY_PATH}
 )
 
 # Installation

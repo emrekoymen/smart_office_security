@@ -50,4 +50,47 @@ logs/
 **/*.hdf5
 **/*.tar
 **/*.tar.gz
-**/*.zip 
+**/*.zip
+
+# Build directories
+build/
+cmake-build-*/
+
+# TensorFlow and Edge TPU related
+external/tensorflow/
+models/*.tflite
+
+# Generated files
+test_video_output/
+test_output/
+output/
+logs/
+
+# Compiled Object files
+*.o
+*.obj
+*.so
+*.a
+*.dll
+*.dylib
+
+# Executables
+dual_camera_detector
+test_camera_capture
+test_video_output
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Temporary files
+*.tmp
+*.log
+.DS_Store
+
+# Python cache files (if any)
+__pycache__/
+*.py[cod]
+*$py.class 
