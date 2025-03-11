@@ -10,6 +10,8 @@ This is a high-performance C++ implementation of the dual-camera person detectio
 - Side-by-side display of both camera feeds with detection overlays
 - Alert system for person detection events
 - Performance metrics logging
+- Video recording of detection events
+- Automatic camera detection and configuration
 
 ## Requirements
 
@@ -47,24 +49,51 @@ cd smart_office_security
 # Checkout the C++ implementation branch
 git checkout cpp_implementation
 
-# Build the project
-mkdir -p build
-cd build
-cmake ..
-make -j$(nproc)
+# Build the project using the build script
+./build_and_run.sh
 ```
 
 ## Usage
 
+### Camera Detection and Configuration
+
+To detect and test available cameras:
+
+```bash
+./camera_detection.sh
+```
+
+This script will:
+- List all available video devices
+- Show detailed information about each camera
+- Allow you to test each camera
+- Create a configuration file with the selected cameras
+
+### Running the Detector
+
+Basic usage with the simplified script:
+
+```bash
+./run_detector.sh
+```
+
+With additional options:
+
+```bash
+./run_detector.sh --threshold=0.6 --save-video --output-dir=output
+```
+
+Or using the binary directly:
+
 ```bash
 # Run with default settings (using webcam 0 and 1)
-./dual_camera_detector
+./build/dual_camera_detector
 
 # Run with specific camera sources
-./dual_camera_detector --camera1=/dev/video0 --camera2=/dev/video1
+./build/dual_camera_detector --camera1=0 --camera2=2
 
 # Run with custom model and threshold
-./dual_camera_detector --model=path/to/model.tflite --threshold=0.6
+./build/dual_camera_detector --model=path/to/model.tflite --threshold=0.6
 ```
 
 ## Command Line Options
@@ -75,16 +104,46 @@ make -j$(nproc)
 - `--camera1`: First camera source (default: 0)
 - `--camera2`: Second camera source (default: 1)
 - `--output-dir`: Directory to save output files (default: output/)
+- `--person-class-id`: Class ID for 'person' (default: 0 for COCO)
 - `--no-display`: Disable display output
 - `--save-video`: Save processed video
+- `--force-cpu`: Force CPU mode (no TPU)
+
+## Utility Scripts
+
+The project includes several utility scripts to help with setup and troubleshooting:
+
+- `build_and_run.sh`: Builds and runs the project
+- `camera_detection.sh`: Detects and tests available cameras
+- `fix_video_output.sh`: Fixes video output issues by testing different codecs
+- `run_detector.sh`: Simplified script to run the detector with common options
+- `setup_tensorflow.sh`: Sets up TensorFlow Lite and Edge TPU integration
 
 ## Performance
 
 The C++ implementation achieves significantly better performance compared to the Python version:
-- Target FPS: 20+ FPS per camera
+- Target FPS: 15+ FPS per camera
 - Lower CPU usage
 - Reduced latency
 - Better memory management
+
+## Troubleshooting
+
+### Video Output Issues
+
+If you encounter issues with video output, run the video output fix script:
+
+```bash
+./fix_video_output.sh
+```
+
+### Camera Issues
+
+If you have issues with cameras:
+
+1. Check that the camera is properly connected
+2. Run `./camera_detection.sh` to identify working cameras
+3. Make sure no other application is using the camera
 
 ## License
 
