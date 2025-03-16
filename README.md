@@ -1,259 +1,92 @@
-# Smart Office Security System - C++ Implementation
+# Smart Office System - Dataset Labeling Tools
 
-This project implements a vision-based security system that utilizes Google Coral's pretrained person detection model to detect unauthorized persons inside an office environment.
+This branch contains tools for downloading and labeling images for the Smart Office Security System. These tools help create a training and testing dataset for the person detection model.
 
-This branch contains the C++ implementation of the system, which provides better performance and optimization compared to the Python version.
+## Contents
 
-## Project Goals
+1. **download_dataset.py** - Script to download sample images of people from Unsplash
+2. **GroundingDINO.py** - Implementation of the Grounding DINO model for object detection
+3. **run_labeling.py** - Script to run the Grounding DINO model on a dataset of images
 
-- Implement a high-performance C++ version of the person detection system
-- Support both single camera and dual camera setups
-- Achieve 20+ FPS processing at 300x300 resolution
-- Support real-time display and video saving
-- Automatically use Edge TPU if available, with fallback to CPU
+## Requirements
 
-## Prerequisites
+These scripts require Python and the following dependencies:
 
-- Ubuntu Desktop
-- CMake 3.10+
-- OpenCV 4.x
-- TensorFlow Lite C++ library (will be built by setup script)
-- Edge TPU runtime (optional, for hardware acceleration)
-- USB webcams or test video files
+```bash
+# Create and activate a conda environment (recommended)
+conda create -n smart_office python=3.8
+conda activate smart_office
 
-## Setup Instructions
-
-### Installing Dependencies
-
-1. Install system dependencies:
-   ```bash
-   sudo apt-get update
-   sudo apt-get install -y \
-     build-essential \
-     cmake \
-     libopencv-dev \
-     python3-opencv \
-     wget \
-     unzip \
-     pkg-config
-   ```
-
-2. Install Edge TPU runtime (optional, for hardware acceleration):
-   ```bash
-   echo "deb https://packages.cloud.google.com/apt coral-edgetpu-stable main" | sudo tee /etc/apt/sources.list.d/coral-edgetpu.list
-   curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
-   sudo apt update
-   sudo apt install -y libedgetpu1-std libedgetpu-dev
-   ```
-
-### Building the Project
-
-1. Clone this repository:
-   ```bash
-   git clone https://github.com/emrekoymen/smart_office_security.git
-   cd smart_office_security
-   git checkout cpp_implementation
-   ```
-
-2. Setup TensorFlow and build the project:
-   ```bash
-   chmod +x build_and_run.sh
-   ./build_and_run.sh --setup-tensorflow --build-only
-   ```
-
-   This will:
-   - Download TensorFlow v2.4.0
-   - Build TensorFlow Lite
-   - Configure and build the project
-
-### Downloading Models
-
-1. Create models directory:
-   ```bash
-   mkdir -p models
-   ```
-
-2. Download Edge TPU compatible models:
-   ```bash
-   wget -O models/ssd_mobilenet_v2_coco_quant_postprocess_edgetpu.tflite https://github.com/google-coral/test_data/raw/master/ssd_mobilenet_v2_coco_quant_postprocess_edgetpu.tflite
-   wget -O models/coco_labels.txt https://raw.githubusercontent.com/google-coral/test_data/master/coco_labels.txt
-   ```
+# Install required packages
+pip install torch torchvision pillow requests transformers
+```
 
 ## Usage
 
-The system provides two modes of operation:
+### 1. Download Sample Images
 
-1. **Single Camera Mode**: Process a single camera feed or video file
-2. **Dual Camera Mode**: Process two camera feeds simultaneously
-
-### Running in Single Camera Mode
+To download a set of sample images containing people:
 
 ```bash
-./run_single_camera.sh [options]
+python download_dataset.py
 ```
 
-Options:
-- `--source=SOURCE`: Camera index or video file path (default: 0)
-- `--threshold=VALUE`: Detection threshold (default: 0.5)
-- `--no-display`: Disable display output
-- `--save-video`: Save processed video
-- `--output-dir=DIR`: Output directory (default: output)
-- `--force-cpu`: Force CPU mode (no TPU)
+This will download 10 images from Unsplash and save them to the `dataset/images` directory.
 
-Examples:
-```bash
-# Run with default camera
-./run_single_camera.sh
+### 2. Label Images
 
-# Run with a video file
-./run_single_camera.sh --source=videos/sample.mp4
-
-# Run with camera 1, no display, and save video
-./run_single_camera.sh --source=1 --no-display --save-video
-```
-
-### Running in Dual Camera Mode
+To label the downloaded images with person detections:
 
 ```bash
-./run_dual_camera.sh [options]
+python run_labeling.py
 ```
 
-Options:
-- `--camera1=INDEX`: First camera index (default: 0)
-- `--camera2=INDEX`: Second camera index (default: 2)
-- `--threshold=VALUE`: Detection threshold (default: 0.5)
-- `--no-display`: Disable display output
-- `--save-video`: Save processed video
-- `--output-dir=DIR`: Output directory (default: output)
-- `--force-cpu`: Force CPU mode (no TPU)
+This script will:
+- Process all images in the `dataset/images` directory
+- Detect people in the images using the Grounding DINO model
+- Save annotated images to `dataset/output/annotated_images`
+- Save XML annotations in PASCAL VOC format to `dataset/output/xml_annotations`
 
-Examples:
-```bash
-# Run with default cameras
-./run_dual_camera.sh
+## Labeling Configuration
 
-# Run with specific camera indexes
-./run_dual_camera.sh --camera1=0 --camera2=1
+The labeling tool is configured to detect people with the following parameters:
 
-# Run with no display and save video
-./run_dual_camera.sh --no-display --save-video
-```
+- **Text Queries**: "person . human . man . woman . people . individual"
+- **Confidence Threshold**: 0.10
+- **Box Threshold**: 0.25
+- **Text Threshold**: 0.25
 
-### Building with Manual Options
+You can modify these parameters in the `GroundingDINO.py` and `run_labeling.py` files.
 
-If you want more control over the build process, you can use the following options with the build script:
+## Output Format
 
-```bash
-# Clean build
-./build_and_run.sh --clean --build-only
+### Annotated Images
 
-# Setup TensorFlow and clean build
-./build_and_run.sh --setup-tensorflow --clean --build-only
+The tool saves annotated images with bounding boxes drawn around detected people. Each box is labeled with the detected class and confidence score.
 
-# Build and run in one step (dual camera mode)
-./build_and_run.sh
-```
+### XML Annotations
 
-## Performance
+The tool generates XML annotations in PASCAL VOC format, which can be used for training object detection models. Each XML file contains:
 
-The C++ implementation is designed for high performance:
+- Image information (filename, size)
+- Object annotations (class, bounding box coordinates)
 
-- Target processing rate: 20+ FPS for both cameras
-- Resolution: 300x300 (default, configurable)
-- Automatic TPU/CPU switching
-- Multi-threaded camera processing
-- Optimized memory usage
+## How It Works
+
+1. The tool loads the Grounding DINO model from HuggingFace
+2. It processes each image with the model, detecting objects based on text queries
+3. The detected objects are filtered by confidence score
+4. Bounding boxes are drawn on the images and saved as annotated images
+5. The annotations are converted to XML format and saved
 
 ## Troubleshooting
 
-### Common Build Errors and Solutions
+If you encounter issues with detections:
 
-#### Error: DualCameraDetector constructor argument mismatch
+1. Try adjusting the confidence threshold in `GroundingDINO.py`
+2. Make sure the images contain clearly visible people
+3. Try different text queries in `run_labeling.py`
 
-If you encounter this error:
-```
-error: no matching constructor for initialization of 'DualCameraDetector'
-        DualCameraDetector detector(args);
-```
+## Additional Information
 
-**Solution**:
-The `DualCameraDetector` constructor requires a `CommandLineArgs` struct, not a map of strings. Convert the map to a `CommandLineArgs` struct:
-
-```cpp
-// Create a CommandLineArgs struct from the parsed arguments
-CommandLineArgs cmdArgs;
-cmdArgs.modelPath = modelPath;
-cmdArgs.labelsPath = labelsPath;
-cmdArgs.threshold = threshold;
-cmdArgs.camera1 = args["camera1"];
-cmdArgs.camera2 = args["camera2"];
-cmdArgs.outputDir = args["output-dir"];
-cmdArgs.noDisplay = !displayOutput;
-cmdArgs.saveVideo = saveVideo;
-cmdArgs.forceCPU = forceCPU;
-
-// Create and run the dual camera detector
-DualCameraDetector detector(cmdArgs);
-```
-
-#### Error: CameraProcessor missing constructor or getFrame method
-
-If you encounter compilation errors related to missing methods or constructors in `CameraProcessor`:
-
-**Solution**:
-Ensure the CameraProcessor class has the required constructors and methods. Add the following to `camera_processor.h`:
-
-```cpp
-// Constructor for video source with target FPS and dimensions
-CameraProcessor(int cameraId, int targetFps, int targetWidth, int targetHeight);
-
-// Constructor for video file with target FPS and dimensions
-CameraProcessor(const std::string& videoPath, int targetFps, int targetWidth, int targetHeight);
-
-// Get the latest frame (for direct access)
-cv::Mat getFrame() {
-    std::lock_guard<std::mutex> lock(lastFrameMutex);
-    return lastFrame.clone();
-}
-```
-
-#### Error: Model path not found
-
-If the model or labels file cannot be found:
-
-**Solution**:
-Use absolute or relative paths in `main.cpp` based on the build directory:
-
-```cpp
-// Get the current directory for absolute paths
-std::filesystem::path currentPath = std::filesystem::current_path();
-
-// Path to model and labels
-std::string modelPath = (std::filesystem::path("../models/ssd_mobilenet_v2_coco_quant_postprocess_edgetpu.tflite")).string();
-std::string labelsPath = (std::filesystem::path("../models/coco_labels.txt")).string();
-```
-
-### Edge TPU Issues
-
-If the Edge TPU is not detected:
-1. Check if the Edge TPU device is connected
-2. Verify that the Edge TPU runtime is installed: `dpkg -l | grep edgetpu`
-3. Check the model is compiled for Edge TPU (should have "edgetpu" in the filename)
-
-### Camera Issues
-
-If cameras are not detected:
-1. List available camera devices: `ls -l /dev/video*`
-2. Try different camera indexes
-3. Check camera permissions: `sudo chmod 666 /dev/video*`
-
-### Build Issues
-
-If you encounter build errors:
-1. Make sure all dependencies are installed
-2. Try a clean build: `./build_and_run.sh --clean --build-only`
-3. Check CMake version: `cmake --version` (must be 3.10+)
-
-## Future Improvements
-
-See the [IMPROVEMENT_PLAN.md](IMPROVEMENT_PLAN.md) file for planned enhancements. 
+The Grounding DINO model is a zero-shot object detector that can detect objects based on text descriptions. It can be used to detect various objects beyond people, such as "hard hat", "high-visibility vest", etc., by modifying the text queries. 

@@ -7,9 +7,11 @@ from PIL import Image, ImageDraw, ImageFont
 from transformers import AutoProcessor, AutoModelForZeroShotObjectDetection
 
 MODEL_ID = "IDEA-Research/grounding-dino-tiny"
-DEVICE = "cuda"
+DEVICE = "cpu"
 TEMPERATURE = 1.0
-CONFIDENCE_THRESHOLD = 0.45
+BOX_THRESHOLD = 0.25
+TEXT_THRESHOLD = 0.25
+CONFIDENCE_THRESHOLD = 0.10
 
 class GroundingDINO:
     def __init__(self, model_id, device):
@@ -147,14 +149,16 @@ class GroundingDinoLabellingTool:
         print("\n🚀 Starting Grounding DINO Labelling...")
         start_time = time.time()
 
-        for filename in filter(lambda x: x.lower().endswith(".jpg"), os.listdir(self.input_folder)):
+        image_extensions = (".jpg", ".jpeg")
+        for filename in [f for f in os.listdir(self.input_folder) if f.lower().endswith(image_extensions)]:
             image_path = os.path.join(self.input_folder, filename)
             print(f"\n🔍 Processing: {filename}")
 
             image, width, height, bboxes = self.processor.process_image(image_path)
 
             if bboxes:
-                output_image_path = os.path.join(self.annotator.output_image_folder, filename.replace(".jpg", "_bbox.jpg"))
+                output_basename = os.path.splitext(filename)[0]
+                output_image_path = os.path.join(self.annotator.output_image_folder, output_basename + "_bbox.jpg")
                 self.annotator.annotate_image(image, bboxes, output_image_path)
                 self.annotator.save_pascal_voc_xml(filename, width, height, bboxes)
             else:
