@@ -1,150 +1,192 @@
-# Smart Office Security - C++ Implementation
+# Smart Office Security System - C++ Implementation
 
-This is a high-performance C++ implementation of the dual-camera person detection system using Google's Coral Edge TPU.
+This project implements a vision-based security system that utilizes Google Coral's pretrained person detection model to detect unauthorized persons inside an office environment.
 
-## Features
+This branch contains the C++ implementation of the system, which provides better performance and optimization compared to the Python version.
 
-- Real-time person detection using two USB cameras
-- Hardware acceleration with Google Coral Edge TPU
-- Multi-threaded processing for optimal performance
-- Side-by-side display of both camera feeds with detection overlays
-- Alert system for person detection events
-- Performance metrics logging
-- Video recording of detection events
-- Automatic camera detection and configuration
+## Project Goals
 
-## Requirements
+- Implement a high-performance C++ version of the person detection system
+- Support both single camera and dual camera setups
+- Achieve 20+ FPS processing at 300x300 resolution
+- Support real-time display and video saving
+- Automatically use Edge TPU if available, with fallback to CPU
 
-- Ubuntu Linux (tested on Ubuntu 20.04/22.04)
-- OpenCV 4.x
-- Google Coral Edge TPU library
-- C++17 compatible compiler
+## Prerequisites
+
+- Ubuntu Desktop
 - CMake 3.10+
+- OpenCV 4.x
+- TensorFlow Lite C++ library (will be built by setup script)
+- Edge TPU runtime (optional, for hardware acceleration)
+- USB webcams or test video files
 
-## Installation
+## Setup Instructions
 
-### Install Dependencies
+### Installing Dependencies
 
-```bash
-# Install OpenCV and development tools
-sudo apt update
-sudo apt install -y build-essential cmake git pkg-config
-sudo apt install -y libopencv-dev
+1. Install system dependencies:
+   ```bash
+   sudo apt-get update
+   sudo apt-get install -y \
+     build-essential \
+     cmake \
+     libopencv-dev \
+     python3-opencv \
+     wget \
+     unzip \
+     pkg-config
+   ```
 
-# Install Edge TPU libraries
-echo "deb https://packages.cloud.google.com/apt coral-edgetpu-stable main" | sudo tee /etc/apt/sources.list.d/coral-edgetpu.list
-curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
-sudo apt update
-sudo apt install -y libedgetpu1-std
-sudo apt install -y python3-pycoral
-```
+2. Install Edge TPU runtime (optional, for hardware acceleration):
+   ```bash
+   echo "deb https://packages.cloud.google.com/apt coral-edgetpu-stable main" | sudo tee /etc/apt/sources.list.d/coral-edgetpu.list
+   curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
+   sudo apt update
+   sudo apt install -y libedgetpu1-std libedgetpu-dev
+   ```
 
-### Build the Project
+### Building the Project
 
-```bash
-# Clone the repository (if you haven't already)
-git clone https://github.com/yourusername/smart_office_security.git
-cd smart_office_security
+1. Clone this repository:
+   ```bash
+   git clone https://github.com/emrekoymen/smart_office_security.git
+   cd smart_office_security
+   git checkout cpp_implementation
+   ```
 
-# Checkout the C++ implementation branch
-git checkout cpp_implementation
+2. Setup TensorFlow and build the project:
+   ```bash
+   chmod +x build_and_run.sh
+   ./build_and_run.sh --setup-tensorflow --build-only
+   ```
 
-# Build the project using the build script
-./build_and_run.sh
-```
+   This will:
+   - Download TensorFlow v2.4.0
+   - Build TensorFlow Lite
+   - Configure and build the project
+
+### Downloading Models
+
+1. Create models directory:
+   ```bash
+   mkdir -p models
+   ```
+
+2. Download Edge TPU compatible models:
+   ```bash
+   wget -O models/ssd_mobilenet_v2_coco_quant_postprocess_edgetpu.tflite https://github.com/google-coral/test_data/raw/master/ssd_mobilenet_v2_coco_quant_postprocess_edgetpu.tflite
+   wget -O models/coco_labels.txt https://raw.githubusercontent.com/google-coral/test_data/master/coco_labels.txt
+   ```
 
 ## Usage
 
-### Camera Detection and Configuration
+The system provides two modes of operation:
 
-To detect and test available cameras:
+1. **Single Camera Mode**: Process a single camera feed or video file
+2. **Dual Camera Mode**: Process two camera feeds simultaneously
 
-```bash
-./camera_detection.sh
-```
-
-This script will:
-- List all available video devices
-- Show detailed information about each camera
-- Allow you to test each camera
-- Create a configuration file with the selected cameras
-
-### Running the Detector
-
-Basic usage with the simplified script:
+### Running in Single Camera Mode
 
 ```bash
-./run_detector.sh
+./run_single_camera.sh [options]
 ```
 
-With additional options:
-
-```bash
-./run_detector.sh --threshold=0.6 --save-video --output-dir=output
-```
-
-Or using the binary directly:
-
-```bash
-# Run with default settings (using webcam 0 and 1)
-./build/dual_camera_detector
-
-# Run with specific camera sources
-./build/dual_camera_detector --camera1=0 --camera2=2
-
-# Run with custom model and threshold
-./build/dual_camera_detector --model=path/to/model.tflite --threshold=0.6
-```
-
-## Command Line Options
-
-- `--model`: Path to the TFLite model (default: models/ssd_mobilenet_v2_coco_quant_postprocess_edgetpu.tflite)
-- `--labels`: Path to the labels file (default: models/coco_labels.txt)
-- `--threshold`: Detection threshold (default: 0.5)
-- `--camera1`: First camera source (default: 0)
-- `--camera2`: Second camera source (default: 1)
-- `--output-dir`: Directory to save output files (default: output/)
-- `--person-class-id`: Class ID for 'person' (default: 0 for COCO)
+Options:
+- `--source=SOURCE`: Camera index or video file path (default: 0)
+- `--threshold=VALUE`: Detection threshold (default: 0.5)
 - `--no-display`: Disable display output
 - `--save-video`: Save processed video
+- `--output-dir=DIR`: Output directory (default: output)
 - `--force-cpu`: Force CPU mode (no TPU)
 
-## Utility Scripts
+Examples:
+```bash
+# Run with default camera
+./run_single_camera.sh
 
-The project includes several utility scripts to help with setup and troubleshooting:
+# Run with a video file
+./run_single_camera.sh --source=videos/sample.mp4
 
-- `build_and_run.sh`: Builds and runs the project
-- `camera_detection.sh`: Detects and tests available cameras
-- `fix_video_output.sh`: Fixes video output issues by testing different codecs
-- `run_detector.sh`: Simplified script to run the detector with common options
-- `setup_tensorflow.sh`: Sets up TensorFlow Lite and Edge TPU integration
+# Run with camera 1, no display, and save video
+./run_single_camera.sh --source=1 --no-display --save-video
+```
+
+### Running in Dual Camera Mode
+
+```bash
+./run_dual_camera.sh [options]
+```
+
+Options:
+- `--camera1=INDEX`: First camera index (default: 0)
+- `--camera2=INDEX`: Second camera index (default: 2)
+- `--threshold=VALUE`: Detection threshold (default: 0.5)
+- `--no-display`: Disable display output
+- `--save-video`: Save processed video
+- `--output-dir=DIR`: Output directory (default: output)
+- `--force-cpu`: Force CPU mode (no TPU)
+
+Examples:
+```bash
+# Run with default cameras
+./run_dual_camera.sh
+
+# Run with specific camera indexes
+./run_dual_camera.sh --camera1=0 --camera2=1
+
+# Run with no display and save video
+./run_dual_camera.sh --no-display --save-video
+```
+
+### Building with Manual Options
+
+If you want more control over the build process, you can use the following options with the build script:
+
+```bash
+# Clean build
+./build_and_run.sh --clean --build-only
+
+# Setup TensorFlow and clean build
+./build_and_run.sh --setup-tensorflow --clean --build-only
+
+# Build and run in one step (dual camera mode)
+./build_and_run.sh
+```
 
 ## Performance
 
-The C++ implementation achieves significantly better performance compared to the Python version:
-- Target FPS: 15+ FPS per camera
-- Lower CPU usage
-- Reduced latency
-- Better memory management
+The C++ implementation is designed for high performance:
+
+- Target processing rate: 20+ FPS for both cameras
+- Resolution: 300x300 (default, configurable)
+- Automatic TPU/CPU switching
+- Multi-threaded camera processing
+- Optimized memory usage
 
 ## Troubleshooting
 
-### Video Output Issues
+### Edge TPU Issues
 
-If you encounter issues with video output, run the video output fix script:
-
-```bash
-./fix_video_output.sh
-```
+If the Edge TPU is not detected:
+1. Check if the Edge TPU device is connected
+2. Verify that the Edge TPU runtime is installed: `dpkg -l | grep edgetpu`
+3. Check the model is compiled for Edge TPU (should have "edgetpu" in the filename)
 
 ### Camera Issues
 
-If you have issues with cameras:
+If cameras are not detected:
+1. List available camera devices: `ls -l /dev/video*`
+2. Try different camera indexes
+3. Check camera permissions: `sudo chmod 666 /dev/video*`
 
-1. Check that the camera is properly connected
-2. Run `./camera_detection.sh` to identify working cameras
-3. Make sure no other application is using the camera
+### Build Issues
 
-## License
+If you encounter build errors:
+1. Make sure all dependencies are installed
+2. Try a clean build: `./build_and_run.sh --clean --build-only`
+3. Check CMake version: `cmake --version` (must be 3.10+)
 
-[MIT License](LICENSE) 
+## Future Improvements
+
+See the [IMPROVEMENT_PLAN.md](IMPROVEMENT_PLAN.md) file for planned enhancements. 
