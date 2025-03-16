@@ -11,6 +11,8 @@
 #ifndef DISABLE_TENSORFLOW
 #include <tensorflow/lite/interpreter.h>
 #include <tensorflow/lite/model.h>
+#include <tensorflow/lite/kernels/register.h>
+#include <tensorflow/lite/optional_debug_tools.h>
 #include <edgetpu.h>
 #endif
 
@@ -87,6 +89,24 @@ public:
      */
     bool isUsingTPU() const { return usingTPU; }
 
+    /**
+     * @brief Get the input height of the model
+     * @return Input height in pixels
+     */
+    int getInputHeight() const { return inputHeight; }
+
+    /**
+     * @brief Get the input width of the model
+     * @return Input width in pixels
+     */
+    int getInputWidth() const { return inputWidth; }
+
+    /**
+     * @brief Get the input channels of the model
+     * @return Number of input channels
+     */
+    int getInputChannels() const { return inputChannels; }
+
 private:
     // Labels map
     std::map<int, std::string> labels;
@@ -106,6 +126,13 @@ private:
     
     // Edge TPU context
     std::shared_ptr<edgetpu::EdgeTpuContext> edgetpuContext;
+
+    /**
+     * @brief Try to initialize Edge TPU
+     * @param modelPath Path to the model file
+     * @return True if successful, false otherwise
+     */
+    bool initializeEdgeTPU(const std::string& modelPath);
 #endif
 };
 
