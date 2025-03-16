@@ -65,6 +65,10 @@ private:
     bool isCamera;
     bool isRunning;
     
+    // Model paths
+    std::string modelPath;
+    std::string labelsPath;
+    
     // Target resolution for processing
     int targetWidth;
     int targetHeight;

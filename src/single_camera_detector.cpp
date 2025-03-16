@@ -15,7 +15,7 @@ SingleCameraDetector::SingleCameraDetector(const std::string& source,
                                            const std::string& labelsPath,
                                            float threshold,
                                            int personClassId)
-    : source(source), threshold(threshold), personClassId(personClassId), 
+    : source(source), modelPath(modelPath), labelsPath(labelsPath), threshold(threshold), personClassId(personClassId), 
       isRunning(false), targetWidth(300), targetHeight(300) {
     
     // Determine if source is a camera or a file
@@ -26,6 +26,16 @@ SingleCameraDetector::SingleCameraDetector(const std::string& source,
     
     // Create output directory if it doesn't exist
     fs::create_directories("output");
+    
+    // Initialize the model
+    try {
+        model = std::make_unique<Model>(modelPath, labelsPath, false);
+        // Get target dimensions from model
+        targetWidth = model->getInputWidth();
+        targetHeight = model->getInputHeight();
+    } catch (const std::exception& e) {
+        std::cerr << "Failed to initialize model: " << e.what() << std::endl;
+    }
 }
 
 SingleCameraDetector::~SingleCameraDetector() {
@@ -42,6 +52,15 @@ void SingleCameraDetector::run(bool displayOutput,
         fs::create_directories(outputDir);
     }
     
+    // Reinitialize the model with the correct forceCPU setting if needed
+    if (model && model->isUsingTPU() != !forceCPU) {
+        try {
+            model = std::make_unique<Model>(modelPath, labelsPath, forceCPU);
+        } catch (const std::exception& e) {
+            std::cerr << "Failed to reinitialize model: " << e.what() << std::endl;
+        }
+    }
+    
     // Initialize the camera processor
     try {
         if (isCamera) {
@@ -50,26 +69,16 @@ void SingleCameraDetector::run(bool displayOutput,
         } else {
             cameraProcessor = std::make_unique<CameraProcessor>(source, 30, 640, 480);
         }
+        
+        // Start the camera processor
+        if (cameraProcessor && !cameraProcessor->start()) {
+            std::cerr << "Failed to start camera processor" << std::endl;
+            return;
+        }
     } catch (const std::exception& e) {
         std::cerr << "Failed to initialize camera processor: " << e.what() << std::endl;
         return;
     }
-    
-    // Initialize the model
-    try {
-        model = std::make_unique<Model>("models/ssd_mobilenet_v2_coco_quant_postprocess_edgetpu.tflite", 
-                                       "models/coco_labels.txt", forceCPU);
-    } catch (const std::exception& e) {
-        std::cerr << "Failed to initialize model: " << e.what() << std::endl;
-        return;
-    }
-    
-    // Target dimensions based on model input
-    targetWidth = model->getInputWidth();
-    targetHeight = model->getInputHeight();
-    
-    std::cout << "Model initialized. Using " 
-              << (model->isUsingTPU() ? "Edge TPU" : "CPU") << std::endl;
     
     // Video writer for saving output
     cv::VideoWriter videoWriter;
@@ -94,9 +103,24 @@ void SingleCameraDetector::run(bool displayOutput,
         // Create output file path
         outputFilePath = outputDir + "/" + sourceName + "_processed_" + ss.str() + ".mp4";
         
-        // Get frame size from first frame
-        cv::Mat firstFrame = cameraProcessor->getFrame();
-        if (!firstFrame.empty()) {
+        // Try to get first frame with multiple attempts
+        cv::Mat firstFrame;
+        bool frameObtained = false;
+        
+        for (int attempt = 0; attempt < 5; attempt++) {
+            std::cout << "Attempt " << (attempt + 1) << " to get first frame..." << std::endl;
+            firstFrame = cameraProcessor->getFrame();
+            
+            if (!firstFrame.empty()) {
+                frameObtained = true;
+                break;
+            }
+            
+            std::cerr << "Attempt " << (attempt + 1) << " to get first frame failed. Retrying..." << std::endl;
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        }
+        
+        if (frameObtained) {
             // Initialize video writer
             videoWriter.open(outputFilePath, 
                             cv::VideoWriter::fourcc('m', 'p', '4', 'v'),
@@ -110,7 +134,7 @@ void SingleCameraDetector::run(bool displayOutput,
                 std::cout << "Saving output to " << outputFilePath << std::endl;
             }
         } else {
-            std::cerr << "Could not get first frame. Output will not be saved." << std::endl;
+            std::cerr << "Could not get first frame after multiple attempts. Output will not be saved." << std::endl;
             saveOutput = false;
         }
     }
@@ -126,8 +150,14 @@ void SingleCameraDetector::run(bool displayOutput,
     std::cout << "Starting detection loop..." << std::endl;
     
     while (isRunning) {
-        // Get frame from camera
-        cv::Mat frame = cameraProcessor->getFrame();
+        // Get frame from camera with explicit error handling
+        cv::Mat frame;
+        try {
+            frame = cameraProcessor->getFrame();
+        } catch (const std::exception& e) {
+            std::cerr << "Error getting frame: " << e.what() << std::endl;
+            break;
+        }
         
         // Check if frame is valid
         if (frame.empty()) {
@@ -135,17 +165,35 @@ void SingleCameraDetector::run(bool displayOutput,
             break;
         }
         
-        // Process frame with detection
-        cv::Mat processedFrame = processFrame(frame);
+        // Process frame with detection and explicit error handling
+        cv::Mat processedFrame;
+        try {
+            processedFrame = processFrame(frame);
+            
+            // If processFrame returned an empty frame, skip this iteration
+            if (processedFrame.empty()) {
+                std::cerr << "Process frame returned empty result, skipping frame" << std::endl;
+                continue;
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "Error processing frame: " << e.what() << std::endl;
+            continue;
+        }
         
         // Get FPS
-        float fps = cameraProcessor->getFPS();
-        totalFps += fps;
+        float fps = 0.0f;
+        try {
+            fps = cameraProcessor->getFPS();
+            totalFps += fps;
+        } catch (const std::exception& e) {
+            std::cerr << "Error getting FPS: " << e.what() << std::endl;
+        }
+        
         frameCount++;
         
         // Add FPS and TPU/CPU text to frame
         std::string fpsText = "FPS: " + std::to_string(int(fps));
-        std::string modeText = model->isUsingTPU() ? "TPU" : "CPU";
+        std::string modeText = model && model->isUsingTPU() ? "TPU" : "CPU";
         
         cv::putText(processedFrame, fpsText, cv::Point(10, 30), 
                    cv::FONT_HERSHEY_SIMPLEX, 1.0, cv::Scalar(0, 255, 0), 2);
@@ -154,18 +202,28 @@ void SingleCameraDetector::run(bool displayOutput,
         
         // Display frame if requested
         if (displayOutput) {
-            cv::imshow("Single Camera Detector", processedFrame);
-            
-            // Exit on ESC or 'q' key
-            int key = cv::waitKey(1);
-            if (key == 27 || key == 'q') {
-                isRunning = false;
+            try {
+                cv::imshow("Single Camera Detector", processedFrame);
+                
+                // Exit on ESC or 'q' key
+                int key = cv::waitKey(1);
+                if (key == 27 || key == 'q') {
+                    isRunning = false;
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "Error displaying frame: " << e.what() << std::endl;
+                displayOutput = false; // Disable display on error
             }
         }
         
         // Write frame to video if requested
         if (saveOutput && videoWriter.isOpened()) {
-            videoWriter.write(processedFrame);
+            try {
+                videoWriter.write(processedFrame);
+            } catch (const std::exception& e) {
+                std::cerr << "Error writing frame to video: " << e.what() << std::endl;
+                saveOutput = false; // Disable video saving on error
+            }
         }
         
         // Print progress every 100 frames
@@ -207,14 +265,35 @@ void SingleCameraDetector::run(bool displayOutput,
     if (displayOutput) {
         cv::destroyAllWindows();
     }
+    
+    // Stop the camera processor
+    if (cameraProcessor) {
+        cameraProcessor->stop();
+    }
 }
 
 cv::Mat SingleCameraDetector::processFrame(const cv::Mat& frame) {
+    // Check for valid input
+    if (frame.empty()) {
+        std::cerr << "Warning: Received empty frame in processFrame()" << std::endl;
+        return cv::Mat(); // Return empty mat to indicate error
+    }
+
     // Clone the frame to avoid modifying the original
     cv::Mat outputFrame = frame.clone();
     
     // Run detection
-    std::vector<Detection> detections = model->processImage(frame, threshold);
+    std::vector<Detection> detections;
+    
+    if (model) {
+        try {
+            detections = model->processImage(frame, threshold);
+        } catch (const std::exception& e) {
+            std::cerr << "Error in model processing: " << e.what() << std::endl;
+        }
+    } else {
+        std::cerr << "Warning: Model is null in processFrame()" << std::endl;
+    }
     
     // Process detections
     int personCount = 0;
@@ -241,8 +320,8 @@ cv::Mat SingleCameraDetector::processFrame(const cv::Mat& frame) {
                          cv::Scalar(0, 255, 0), 2);
             
             // Add label with confidence
-            std::string label = model->getLabel(detection.id) + " " + 
-                               std::to_string(static_cast<int>(detection.score * 100)) + "%";
+            std::string label = model ? model->getLabel(detection.id) : "Person";
+            label += " " + std::to_string(static_cast<int>(detection.score * 100)) + "%";
             
             int baseline = 0;
             cv::Size textSize = cv::getTextSize(label, cv::FONT_HERSHEY_SIMPLEX, 

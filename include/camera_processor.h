@@ -37,6 +37,24 @@ public:
     CameraProcessor(int cameraId, std::shared_ptr<Model> model, int personClassId = 0, float threshold = 0.5);
 
     /**
+     * @brief Constructor for video source with target FPS and dimensions
+     * @param cameraId Camera identifier/index
+     * @param targetFps Target FPS
+     * @param targetWidth Target width
+     * @param targetHeight Target height
+     */
+    CameraProcessor(int cameraId, int targetFps, int targetWidth, int targetHeight);
+    
+    /**
+     * @brief Constructor for video file with target FPS and dimensions
+     * @param videoPath Path to the video file
+     * @param targetFps Target FPS
+     * @param targetWidth Target width
+     * @param targetHeight Target height
+     */
+    CameraProcessor(const std::string& videoPath, int targetFps, int targetWidth, int targetHeight);
+
+    /**
      * @brief Destructor
      */
     ~CameraProcessor();
@@ -64,6 +82,24 @@ public:
      * @return Shared pointer to the latest result
      */
     std::shared_ptr<ProcessedResult> getLatestResult();
+    
+    /**
+     * @brief Get the latest frame (for direct access)
+     * @return Latest frame from the camera
+     */
+    cv::Mat getFrame() {
+        std::lock_guard<std::mutex> lock(lastFrameMutex);
+        if (lastFrame.empty() && cap.isOpened()) {
+            // Try to read a frame directly if the stored frame is empty
+            cv::Mat frame;
+            if (cap.read(frame)) {
+                lastFrame = frame.clone();
+            } else {
+                std::cerr << "Failed to read frame directly from camera/video" << std::endl;
+            }
+        }
+        return lastFrame.clone();
+    }
 
     /**
      * @brief Get the camera ID

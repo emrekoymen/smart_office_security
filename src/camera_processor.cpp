@@ -7,6 +7,44 @@ CameraProcessor::CameraProcessor(int cameraId, std::shared_ptr<Model> model, int
       frameWidth(0), frameHeight(0), fps(30.0), running(false), totalFrames(0), totalDetections(0) {
 }
 
+CameraProcessor::CameraProcessor(int cameraId, int targetFps, int targetWidth, int targetHeight)
+    : cameraId(cameraId), model(nullptr), personClassId(0), threshold(0.5),
+      frameWidth(targetWidth), frameHeight(targetHeight), fps(targetFps), 
+      running(false), totalFrames(0), totalDetections(0) {
+    
+    // Open camera with ID
+    std::string sourceStr = std::to_string(cameraId);
+    if (!openCamera(sourceStr)) {
+        std::cerr << "Failed to open camera " << cameraId << std::endl;
+    }
+}
+
+CameraProcessor::CameraProcessor(const std::string& videoPath, int targetFps, int targetWidth, int targetHeight)
+    : cameraId(-1), model(nullptr), personClassId(0), threshold(0.5),
+      frameWidth(targetWidth), frameHeight(targetHeight), fps(targetFps), 
+      running(false), totalFrames(0), totalDetections(0) {
+    
+    // Open video file
+    if (!openCamera(videoPath)) {
+        std::cerr << "Failed to open video file: " << videoPath << std::endl;
+        throw std::runtime_error("Failed to open video file: " + videoPath);
+    }
+    
+    // Check if we can read at least one frame
+    cv::Mat testFrame;
+    if (!cap.read(testFrame) || testFrame.empty()) {
+        std::cerr << "Could not read first frame from video file: " << videoPath << std::endl;
+        throw std::runtime_error("Could not read first frame from video file: " + videoPath);
+    }
+    
+    // Reset to the beginning of the video
+    cap.set(cv::CAP_PROP_POS_FRAMES, 0);
+    
+    // Store the first frame
+    std::lock_guard<std::mutex> lock(lastFrameMutex);
+    lastFrame = testFrame.clone();
+}
+
 CameraProcessor::~CameraProcessor() {
     stop();
 }

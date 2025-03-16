@@ -166,6 +166,73 @@ The C++ implementation is designed for high performance:
 
 ## Troubleshooting
 
+### Common Build Errors and Solutions
+
+#### Error: DualCameraDetector constructor argument mismatch
+
+If you encounter this error:
+```
+error: no matching constructor for initialization of 'DualCameraDetector'
+        DualCameraDetector detector(args);
+```
+
+**Solution**:
+The `DualCameraDetector` constructor requires a `CommandLineArgs` struct, not a map of strings. Convert the map to a `CommandLineArgs` struct:
+
+```cpp
+// Create a CommandLineArgs struct from the parsed arguments
+CommandLineArgs cmdArgs;
+cmdArgs.modelPath = modelPath;
+cmdArgs.labelsPath = labelsPath;
+cmdArgs.threshold = threshold;
+cmdArgs.camera1 = args["camera1"];
+cmdArgs.camera2 = args["camera2"];
+cmdArgs.outputDir = args["output-dir"];
+cmdArgs.noDisplay = !displayOutput;
+cmdArgs.saveVideo = saveVideo;
+cmdArgs.forceCPU = forceCPU;
+
+// Create and run the dual camera detector
+DualCameraDetector detector(cmdArgs);
+```
+
+#### Error: CameraProcessor missing constructor or getFrame method
+
+If you encounter compilation errors related to missing methods or constructors in `CameraProcessor`:
+
+**Solution**:
+Ensure the CameraProcessor class has the required constructors and methods. Add the following to `camera_processor.h`:
+
+```cpp
+// Constructor for video source with target FPS and dimensions
+CameraProcessor(int cameraId, int targetFps, int targetWidth, int targetHeight);
+
+// Constructor for video file with target FPS and dimensions
+CameraProcessor(const std::string& videoPath, int targetFps, int targetWidth, int targetHeight);
+
+// Get the latest frame (for direct access)
+cv::Mat getFrame() {
+    std::lock_guard<std::mutex> lock(lastFrameMutex);
+    return lastFrame.clone();
+}
+```
+
+#### Error: Model path not found
+
+If the model or labels file cannot be found:
+
+**Solution**:
+Use absolute or relative paths in `main.cpp` based on the build directory:
+
+```cpp
+// Get the current directory for absolute paths
+std::filesystem::path currentPath = std::filesystem::current_path();
+
+// Path to model and labels
+std::string modelPath = (std::filesystem::path("../models/ssd_mobilenet_v2_coco_quant_postprocess_edgetpu.tflite")).string();
+std::string labelsPath = (std::filesystem::path("../models/coco_labels.txt")).string();
+```
+
 ### Edge TPU Issues
 
 If the Edge TPU is not detected:

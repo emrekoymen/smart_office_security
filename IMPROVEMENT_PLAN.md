@@ -32,30 +32,41 @@ Based on the code review and testing, here's a comprehensive plan to improve the
 3. Implement batch processing if supported by the model
 4. Profile the code to identify bottlenecks
 
-## 3. Camera Configuration
+## 3. Camera and Video Processing Issues
 
 ### Current Status
 - Camera 1 (index 0): 1280x720 @ 10 FPS
 - Camera 2 (index 2): 1920x1080 @ 5 FPS
 - Some camera devices are not capture devices
+- **Issue**: Video file processing in single camera mode does not read frames correctly
+- **Issue**: Video output is not saved due to frame access issues
 
 ### Action Items
-1. Add camera capability detection to automatically select valid cameras
-2. Implement camera configuration options:
+1. Fix frame acquisition in `SingleCameraDetector` class:
+   - Debug the `getFrame()` method in `CameraProcessor` to ensure it works correctly
+   - Fix the frame queue management to ensure frames are properly accessed
+   - Ensure video file paths are correctly handled
+2. Add camera capability detection to automatically select valid cameras
+3. Implement camera configuration options:
    - Allow setting custom resolutions
    - Allow setting custom FPS
-3. Add fallback mechanisms for camera failures
+4. Add fallback mechanisms for camera failures
+5. Improve video file reading:
+   - Ensure OpenCV can properly read the video file format
+   - Add better error reporting for video file issues
 
 ## 4. Video Output Improvements
 
 ### Current Status
 - Video output is saved as MP4 with side-by-side frames
 - Small file sizes indicate potential issues with video saving
+- Cannot save video in single camera mode due to frame acquisition issues
 
 ### Action Items
 1. Fix video saving issues:
    - Check codec compatibility
    - Ensure proper frame writing
+   - Fix the "Could not get first frame" issue in single camera mode
 2. Add options for different output formats
 3. Implement timestamp overlay on saved videos
 4. Add option to save individual camera feeds separately

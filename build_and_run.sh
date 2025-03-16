@@ -39,21 +39,22 @@ if [ "$SETUP_TENSORFLOW" = true ]; then
     mkdir -p external
     
     # Check if tensorflow is already downloaded
-    if [ ! -d "external/tensorflow" ]; then
+    if [ ! -d "external/tensorflow/tensorflow-2.4.0" ]; then
         echo "Downloading TensorFlow 2.4.0..."
         cd external
         wget https://github.com/tensorflow/tensorflow/archive/v2.4.0.zip
         unzip v2.4.0.zip
-        mv tensorflow-2.4.0/ tensorflow
+        mkdir -p tensorflow
+        mv tensorflow-2.4.0/ tensorflow/
         chmod 777 tensorflow -R
         cd ..
     fi
     
     # Download dependencies and build TensorFlow Lite
-    cd external/tensorflow
+    cd external/tensorflow/tensorflow-2.4.0
     ./tensorflow/lite/tools/make/download_dependencies.sh
     make -f tensorflow/lite/tools/make/Makefile
-    cd ../..
+    cd ../../..
     
     echo "TensorFlow setup complete!"
 fi

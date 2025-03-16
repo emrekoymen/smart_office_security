@@ -83,28 +83,48 @@ int main(int argc, char* argv[]) {
     bool forceCPU = args["force-cpu"] == "true";
     float threshold = std::stof(args["threshold"]);
     
+    // Get the current directory for absolute paths
+    std::filesystem::path currentPath = std::filesystem::current_path();
+    
+    // Path to model and labels
+    std::string modelPath = (std::filesystem::path("../models/ssd_mobilenet_v2_coco_quant_postprocess_edgetpu.tflite")).string();
+    std::string labelsPath = (std::filesystem::path("../models/coco_labels.txt")).string();
+    
+    std::cout << "Model path: " << modelPath << std::endl;
+    std::cout << "Labels path: " << labelsPath << std::endl;
+    
     try {
         if (singleCamera) {
             std::cout << "Running in single camera mode" << std::endl;
+            
+            // Create and run the single camera detector
             SingleCameraDetector detector(
                 args["source"],
-                "models/ssd_mobilenet_v2_coco_quant_postprocess_edgetpu.tflite",
-                "models/coco_labels.txt",
+                modelPath,
+                labelsPath,
                 threshold
             );
             
             detector.run(displayOutput, saveVideo, args["output-dir"], forceCPU);
         } else {
             std::cout << "Running in dual camera mode" << std::endl;
-            DualCameraDetector detector(
-                args["camera1"],
-                args["camera2"],
-                "models/ssd_mobilenet_v2_coco_quant_postprocess_edgetpu.tflite",
-                "models/coco_labels.txt",
-                threshold
-            );
             
-            detector.run(displayOutput, saveVideo, args["output-dir"], forceCPU);
+            // Create a CommandLineArgs struct from the parsed arguments
+            CommandLineArgs cmdArgs;
+            cmdArgs.modelPath = modelPath;
+            cmdArgs.labelsPath = labelsPath;
+            cmdArgs.threshold = threshold;
+            cmdArgs.camera1 = args["camera1"];
+            cmdArgs.camera2 = args["camera2"];
+            cmdArgs.outputDir = args["output-dir"];
+            cmdArgs.noDisplay = !displayOutput;
+            cmdArgs.saveVideo = saveVideo;
+            cmdArgs.forceCPU = forceCPU;
+            
+            // Create and run the dual camera detector
+            DualCameraDetector detector(cmdArgs);
+            
+            detector.run();
         }
         
         return 0;
