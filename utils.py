@@ -146,60 +146,60 @@ def save_detection_image(frame, output_dir="detections"):
 
 
 def draw_detection_box(frame, bbox, label, score):
-    """Draw bounding box and label on the frame."""
-    # Check if bbox is a list or a BBox object
-    if hasattr(bbox, 'ymin'):  # It's a BBox object
-        ymin, xmin, ymax, xmax = bbox.ymin, bbox.xmin, bbox.ymax, bbox.xmax
-    else:  # It's a list [ymin, xmin, ymax, xmax]
-        ymin, xmin, ymax, xmax = bbox
+    """Draw bounding box and label on the frame. Assumes bbox is an object with ymin, xmin, ymax, xmax attributes containing PIXEL coordinates."""
+    # Directly access attributes, assuming bbox is the expected object with pixel coordinates
+    ymin, xmin, ymax, xmax = bbox.ymin, bbox.xmin, bbox.ymax, bbox.xmax
+
+    # Get frame dimensions (though not strictly needed if coords are already absolute)
+    # height, width, _ = frame.shape
+
+    # REMOVED check for normalized coordinates - Assume input is already pixels
+    # if xmin <= 1 and ymin <= 1 and xmax <= 1 and ymax <= 1:
+    #     # Convert normalized coordinates to pixel values
+    #     xmin = int(xmin * width)
+    #     xmax = int(xmax * width)
+    #     ymin = int(ymin * height)
+    #     ymax = int(ymax * height)
+    # else:
+    #     # Already in pixel coordinates, just convert to int
+    #     xmin = int(xmin)
+    #     xmax = int(xmax)
+    #     ymin = int(ymin)
+    #     ymax = int(ymax)
     
-    # Get frame dimensions
-    height, width, _ = frame.shape
-    
-    # Check if coordinates are normalized (between 0 and 1) or absolute
-    # If any coordinate is > 1, assume they are already in pixel coordinates
-    if xmin <= 1 and ymin <= 1 and xmax <= 1 and ymax <= 1:
-        # Convert normalized coordinates to pixel values
-        xmin = int(xmin * width)
-        xmax = int(xmax * width)
-        ymin = int(ymin * height)
-        ymax = int(ymax * height)
-    else:
-        # Already in pixel coordinates, just convert to int
-        xmin = int(xmin)
-        xmax = int(xmax)
-        ymin = int(ymin)
-        ymax = int(ymax)
-    
-    # Debug print
-    print(f"Drawing box at: ({xmin}, {ymin}), ({xmax}, {ymax}), dimensions: {width}x{height}")
-    
+    # Ensure coordinates are integers for drawing
+    xmin, ymin, xmax, ymax = int(xmin), int(ymin), int(xmax), int(ymax)
+
+    # --- DEBUGGING --- 
+    print(f"DEBUG: Drawing box with label '{label}' score {score:.2f} at pixel coords: ({xmin}, {ymin}), ({xmax}, {ymax})")
+    # --- END DEBUGGING ---
+
     # Draw bounding box with thicker lines
     cv2.rectangle(frame, (xmin, ymin), (xmax, ymax), (0, 255, 0), 3)
-    
+
     # Prepare label text with confidence score
     label_text = f"{label}: {score:.2f}"
-    
+
     # Get text size for background rectangle
     font = cv2.FONT_HERSHEY_SIMPLEX
     font_scale = 0.7
     font_thickness = 2
     (text_width, text_height), baseline = cv2.getTextSize(label_text, font, font_scale, font_thickness)
-    
+
     # Draw background rectangle for text
-    cv2.rectangle(frame, 
-                 (xmin, ymin - text_height - 10), 
-                 (xmin + text_width + 10, ymin), 
-                 (0, 0, 0), 
+    cv2.rectangle(frame,
+                 (xmin, ymin - text_height - 10),
+                 (xmin + text_width + 10, ymin),
+                 (0, 0, 0),
                  -1)  # -1 means filled rectangle
-    
+
     # Draw label text on the background rectangle
-    cv2.putText(frame, 
-                label_text, 
-                (xmin + 5, ymin - 5), 
-                font, 
-                font_scale, 
-                (0, 255, 0), 
+    cv2.putText(frame,
+                label_text,
+                (xmin + 5, ymin - 5),
+                font,
+                font_scale,
+                (0, 255, 0),
                 font_thickness)
-    
+
     return frame 

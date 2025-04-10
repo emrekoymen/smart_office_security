@@ -1,0 +1,13 @@
+name: smart_office_macos
+channels:
+  - defaults
+  - conda-forge  # Often needed for specific versions or packages
+dependencies:
+  - python=3.9  # Specify a Python version
+  - opencv
+  - numpy
+  - pillow
+  - tqdm
+  - matplotlib
+  # - plyer # Removed - will install via pip
+  - tensorflow 
