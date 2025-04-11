@@ -76,8 +76,19 @@ bool DualCameraDetector::initialize() {
     alertSystem = std::make_unique<AlertSystem>(args.threshold);
     
     // Initialize camera processors
-    camera1 = std::make_unique<CameraProcessor>(1, model, args.personClassId, args.threshold);
-    camera2 = std::make_unique<CameraProcessor>(2, model, args.personClassId, args.threshold);
+    try {
+        camera1 = std::make_unique<CameraProcessor>(1, model, args.personClassId, args.threshold);
+    } catch (const std::exception& e) {
+        std::cerr << "Error initializing camera processor 1: " << e.what() << std::endl;
+        return false;
+    }
+
+    try {
+        camera2 = std::make_unique<CameraProcessor>(2, model, args.personClassId, args.threshold);
+    } catch (const std::exception& e) {
+        std::cerr << "Error initializing camera processor 2: " << e.what() << std::endl;
+        return false;
+    }
     
     // Open cameras
     std::cout << "Opening camera 1: " << args.camera1 << std::endl;
@@ -110,9 +121,13 @@ bool DualCameraDetector::initialize() {
 bool DualCameraDetector::run() {
     // Initialize video writer if saving
     if (args.saveVideo) {
-        // Use the first camera's dimensions for the combined output
-        int frameWidth = camera1->getFrameWidth() * 2;  // Side by side
-        int frameHeight = std::max(camera1->getFrameHeight(), camera2->getFrameHeight());
+        // Target resolution for each camera feed
+        const int targetWidth = 640;
+        const int targetHeight = 480;
+        
+        // Combined output size
+        int combinedWidth = targetWidth * 2;
+        int combinedHeight = targetHeight;
         
         // Generate output filename
         auto now = std::chrono::system_clock::now();
@@ -124,7 +139,7 @@ bool DualCameraDetector::run() {
         
         // Define codec and create VideoWriter object
         int fourcc = cv::VideoWriter::fourcc('m', 'p', '4', 'v');
-        videoWriter.open(outputPath, fourcc, 30.0, cv::Size(frameWidth, frameHeight));
+        videoWriter.open(outputPath, fourcc, 30.0, cv::Size(combinedWidth, combinedHeight));
         
         if (!videoWriter.isOpened()) {
             std::cerr << "Failed to open video writer" << std::endl;
@@ -201,23 +216,17 @@ void DualCameraDetector::processCameraFeeds() {
             }
         }
         
-        // Resize frames to same height if different
-        if (frame1.rows != frame2.rows) {
-            // Resize the smaller frame to match the height of the larger one
-            if (frame1.rows < frame2.rows) {
-                double scale = static_cast<double>(frame2.rows) / frame1.rows;
-                int newWidth = static_cast<int>(frame1.cols * scale);
-                cv::resize(frame1, frame1, cv::Size(newWidth, frame2.rows));
-            } else {
-                double scale = static_cast<double>(frame1.rows) / frame2.rows;
-                int newWidth = static_cast<int>(frame2.cols * scale);
-                cv::resize(frame2, frame2, cv::Size(newWidth, frame1.rows));
-            }
-        }
+        // Define target display size
+        const cv::Size targetSize(640, 480);
         
-        // Combine frames side by side
+        // Resize both frames to target size
+        cv::Mat resizedFrame1, resizedFrame2;
+        cv::resize(frame1, resizedFrame1, targetSize);
+        cv::resize(frame2, resizedFrame2, targetSize);
+        
+        // Combine resized frames side by side
         cv::Mat combinedFrame;
-        cv::hconcat(frame1, frame2, combinedFrame);
+        cv::hconcat(resizedFrame1, resizedFrame2, combinedFrame);
         
         // Display if enabled and available
         if (!args.noDisplay) {

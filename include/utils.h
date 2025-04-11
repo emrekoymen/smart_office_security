@@ -20,20 +20,33 @@ public:
     FPSCounter(int avgFrames = 30) : avgFrames(avgFrames) {}
 
     /**
-     * @brief Update the FPS calculation with a new frame
+     * @brief Update the FPS counter with the time of the latest frame
      */
     void update() {
         auto now = std::chrono::high_resolution_clock::now();
         frameTimes.push_back(now);
-        
-        // Keep only the last avgFrames times
-        while (frameTimes.size() > avgFrames) {
+        if (frameTimes.size() > avgFrames) {
             frameTimes.pop_front();
         }
     }
 
     /**
-     * @brief Get the current FPS
+     * @brief Update the FPS counter using the processing time of the last frame.
+     * @param processingTime Time in milliseconds for the last frame.
+     */
+    void addFrame(double processingTime) {
+        // This approach might be less accurate than using timestamps if frame intervals vary
+        // but it matches the usage in CameraProcessor
+        double fps = (processingTime > 0) ? 1000.0 / processingTime : 0.0;
+        // We need a way to store/average this, the deque stores time_points
+        // For simplicity, let's just store the latest processing time and use it
+        // A more robust solution would involve averaging recent processing times
+        latestProcessingTime = processingTime;
+        update(); // Still use update to manage the deque size if needed for other calculations
+    }
+
+    /**
+     * @brief Get the current average FPS
      * @return Current FPS value
      */
     double getFPS() const {
@@ -69,6 +82,7 @@ public:
 private:
     int avgFrames;
     std::deque<std::chrono::time_point<std::chrono::high_resolution_clock>> frameTimes;
+    double latestProcessingTime = 0.0; // Store latest processing time
 };
 
 /**

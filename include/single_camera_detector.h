@@ -7,6 +7,13 @@
 #include "camera_processor.h"
 #include "model.h"
 
+// Forward declaration for TFLite interpreter if not disabled
+#ifndef DISABLE_TENSORFLOW
+namespace tflite {
+    class Interpreter;
+}
+#endif
+
 /**
  * @brief Class to handle single camera or video file processing with person detection
  */
@@ -53,8 +60,13 @@ private:
     // Camera processor
     std::unique_ptr<CameraProcessor> cameraProcessor;
     
-    // Detection model
-    std::unique_ptr<Model> model;
+    // Detection model (changed to shared_ptr)
+    std::shared_ptr<Model> model;
+
+#ifndef DISABLE_TENSORFLOW
+    // Dedicated interpreter for this detector - REMOVED (now in CameraProcessor)
+    // std::unique_ptr<tflite::Interpreter> interpreter;
+#endif
     
     // Detection settings
     float threshold;
@@ -72,13 +84,6 @@ private:
     // Target resolution for processing
     int targetWidth;
     int targetHeight;
-    
-    /**
-     * @brief Process a frame with detection
-     * @param frame Frame to process
-     * @return Processed frame with detections
-     */
-    cv::Mat processFrame(const cv::Mat& frame);
     
     /**
      * @brief Determine if a source is a camera or a file

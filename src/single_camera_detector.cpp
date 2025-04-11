@@ -27,18 +27,22 @@ SingleCameraDetector::SingleCameraDetector(const std::string& source,
     // Create output directory if it doesn't exist
     fs::create_directories("output");
     
-    // Initialize the model
+    // Initialize the model (as shared_ptr)
     try {
-        model = std::make_unique<Model>(modelPath, labelsPath, false);
-        // Get target dimensions from model
+        model = std::make_shared<Model>(modelPath, labelsPath, false);
         targetWidth = model->getInputWidth();
         targetHeight = model->getInputHeight();
+        // Interpreter creation removed
     } catch (const std::exception& e) {
         std::cerr << "Failed to initialize model: " << e.what() << std::endl;
+        model = nullptr;
     }
 }
 
 SingleCameraDetector::~SingleCameraDetector() {
+    if (cameraProcessor) {
+         cameraProcessor->stop(); // Ensure processor is stopped
+    }
     std::cout << "Single camera detector destructor called" << std::endl;
 }
 
@@ -52,298 +56,184 @@ void SingleCameraDetector::run(bool displayOutput,
         fs::create_directories(outputDir);
     }
     
-    // Reinitialize the model with the correct forceCPU setting if needed
-    if (model && model->isUsingTPU() != !forceCPU) {
+    // Reinitialize the model if necessary
+    bool modelReinitialized = false;
+    if (!model || model->isUsingTPU() == forceCPU) { 
         try {
-            model = std::make_unique<Model>(modelPath, labelsPath, forceCPU);
+            std::cout << "Reinitializing model (forceCPU=" << forceCPU << ")..." << std::endl;
+            model = std::make_shared<Model>(modelPath, labelsPath, forceCPU);
+            modelReinitialized = true;
+             // Interpreter logic removed from here too
         } catch (const std::exception& e) {
             std::cerr << "Failed to reinitialize model: " << e.what() << std::endl;
-        }
-    }
-    
-    // Initialize the camera processor
-    try {
-        if (isCamera) {
-            int cameraIndex = std::stoi(source);
-            cameraProcessor = std::make_unique<CameraProcessor>(cameraIndex, 30, 640, 480);
-        } else {
-            cameraProcessor = std::make_unique<CameraProcessor>(source, 30, 640, 480);
-        }
-        
-        // Start the camera processor
-        if (cameraProcessor && !cameraProcessor->start()) {
-            std::cerr << "Failed to start camera processor" << std::endl;
             return;
         }
-    } catch (const std::exception& e) {
-        std::cerr << "Failed to initialize camera processor: " << e.what() << std::endl;
-        return;
+    }
+
+    // Ensure model is valid before proceeding
+    if (!model) {
+         std::cerr << "Model is not initialized. Cannot run detector." << std::endl;
+         return;
     }
     
-    // Video writer for saving output
+    // Initialize or reinitialize the camera processor if necessary
+    if (!cameraProcessor || modelReinitialized) {
+        try {
+            std::cout << "Initializing CameraProcessor..." << std::endl;
+            int cameraIndex = -1; 
+            if (isCamera) {
+                try {
+                    cameraIndex = std::stoi(source);
+                } catch (...) { /* Handle exceptions */ }
+            }
+            
+            // Stop existing processor if reinitializing
+            if (cameraProcessor) {
+                cameraProcessor->stop();
+            }
+
+            // Create CameraProcessor using the correct constructor
+            cameraProcessor = std::make_unique<CameraProcessor>(cameraIndex, model, personClassId, threshold);
+            
+            // Open the camera/video source
+            if (!cameraProcessor->openCamera(source)) {
+                throw std::runtime_error("Failed to open camera/video source: " + source);
+            }
+            
+            // Start the camera processor
+            if (!cameraProcessor->start()) {
+                throw std::runtime_error("Failed to start camera processor");
+            }
+             std::cout << "CameraProcessor started." << std::endl;
+        } catch (const std::exception& e) {
+            std::cerr << "Failed to initialize camera processor: " << e.what() << std::endl;
+            return;
+        }
+    }
+    
+    // Video writer setup (remains largely the same, but get frame from processor)
     cv::VideoWriter videoWriter;
     std::string outputFilePath;
+    bool videoWriterOpened = false;
     
     if (saveOutput) {
-        // Get source name for output file
-        std::string sourceName;
-        if (isCamera) {
-            sourceName = "camera" + source;
-        } else {
-            fs::path p(source);
-            sourceName = p.stem().string();
-        }
-        
-        // Create timestamp
+        // ... (output file naming logic) ...
+        std::string sourceName = isCamera ? "camera" + source : fs::path(source).stem().string();
         auto now = std::chrono::system_clock::now();
         auto now_time_t = std::chrono::system_clock::to_time_t(now);
         std::stringstream ss;
         ss << std::put_time(std::localtime(&now_time_t), "%Y%m%d_%H%M%S");
-        
-        // Create output file path
         outputFilePath = outputDir + "/" + sourceName + "_processed_" + ss.str() + ".mp4";
         
-        // Try to get first frame with multiple attempts
+        // Get initial frame dimensions from processor
         cv::Mat firstFrame;
-        bool frameObtained = false;
-        
-        for (int attempt = 0; attempt < 5; attempt++) {
-            std::cout << "Attempt " << (attempt + 1) << " to get first frame..." << std::endl;
-            firstFrame = cameraProcessor->getFrame();
-            
-            if (!firstFrame.empty()) {
-                frameObtained = true;
-                break;
-            }
-            
-            std::cerr << "Attempt " << (attempt + 1) << " to get first frame failed. Retrying..." << std::endl;
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        for (int attempt = 0; attempt < 10 && firstFrame.empty(); ++attempt) {
+             std::this_thread::sleep_for(std::chrono::milliseconds(200)); // Wait for processor
+             auto result = cameraProcessor->getLatestResult();
+             if (result && !result->frame.empty()) {
+                  firstFrame = result->frame;
+                  break;
+             }
         }
         
-        if (frameObtained) {
-            // Initialize video writer
+        if (!firstFrame.empty()) {
             videoWriter.open(outputFilePath, 
                             cv::VideoWriter::fourcc('m', 'p', '4', 'v'),
-                            30.0, 
+                            cameraProcessor->getFPS() > 0 ? cameraProcessor->getFPS() : 30.0, // Use actual FPS if available
                             cv::Size(firstFrame.cols, firstFrame.rows));
-            
-            if (!videoWriter.isOpened()) {
-                std::cerr << "Could not open video writer. Output will not be saved." << std::endl;
-                saveOutput = false;
+            videoWriterOpened = videoWriter.isOpened();
+            if (videoWriterOpened) {
+                 std::cout << "Saving output to " << outputFilePath << std::endl;
             } else {
-                std::cout << "Saving output to " << outputFilePath << std::endl;
+                 std::cerr << "Could not open video writer." << std::endl;
+                 saveOutput = false;
             }
         } else {
-            std::cerr << "Could not get first frame after multiple attempts. Output will not be saved." << std::endl;
+            std::cerr << "Could not get first frame from processor. Output will not be saved." << std::endl;
             saveOutput = false;
         }
     }
     
-    // Main processing loop
+    // Main processing loop using CameraProcessor results
     isRunning = true;
     int frameCount = 0;
-    int detectionCount = 0;
-    float totalFps = 0.0f;
-    
-    auto startTime = std::chrono::high_resolution_clock::now();
+    double totalFpsAccumulator = 0.0;
     
     std::cout << "Starting detection loop..." << std::endl;
     
-    while (isRunning) {
-        // Get frame from camera with explicit error handling
-        cv::Mat frame;
-        try {
-            frame = cameraProcessor->getFrame();
-        } catch (const std::exception& e) {
-            std::cerr << "Error getting frame: " << e.what() << std::endl;
-            break;
-        }
-        
-        // Check if frame is valid
-        if (frame.empty()) {
-            std::cout << "End of video or camera disconnected" << std::endl;
-            break;
-        }
-        
-        // Process frame with detection and explicit error handling
-        cv::Mat processedFrame;
-        try {
-            processedFrame = processFrame(frame);
-            
-            // If processFrame returned an empty frame, skip this iteration
-            if (processedFrame.empty()) {
-                std::cerr << "Process frame returned empty result, skipping frame" << std::endl;
-                continue;
-            }
-        } catch (const std::exception& e) {
-            std::cerr << "Error processing frame: " << e.what() << std::endl;
+    while (isRunning && cameraProcessor && cameraProcessor->isRunning()) {
+        auto result = cameraProcessor->getLatestResult();
+
+        if (!result) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10)); 
             continue;
         }
-        
-        // Get FPS
-        float fps = 0.0f;
-        try {
-            fps = cameraProcessor->getFPS();
-            totalFps += fps;
-        } catch (const std::exception& e) {
-            std::cerr << "Error getting FPS: " << e.what() << std::endl;
+
+        cv::Mat processedFrame = result->frame;
+        if (processedFrame.empty()) {
+             std::cout << "Received empty processed frame." << std::endl;
+             continue; // Skip if frame is empty
         }
         
+        float currentFps = result->fps;
+        totalFpsAccumulator += currentFps;
         frameCount++;
         
-        // Add FPS and TPU/CPU text to frame
-        std::string fpsText = "FPS: " + std::to_string(int(fps));
-        std::string modeText = model && model->isUsingTPU() ? "TPU" : "CPU";
+        // Add text overlays (FPS, Mode)
+        std::string fpsText = "FPS: " + std::to_string(static_cast<int>(currentFps));
+        std::string modeText = model->isUsingTPU() ? "TPU" : "CPU";
+        cv::putText(processedFrame, fpsText, cv::Point(10, 30), cv::FONT_HERSHEY_SIMPLEX, 1.0, cv::Scalar(0, 255, 0), 2);
+        cv::putText(processedFrame, modeText, cv::Point(processedFrame.cols - 100, 30), cv::FONT_HERSHEY_SIMPLEX, 1.0, cv::Scalar(0, 255, 0), 2);
         
-        cv::putText(processedFrame, fpsText, cv::Point(10, 30), 
-                   cv::FONT_HERSHEY_SIMPLEX, 1.0, cv::Scalar(0, 255, 0), 2);
-        cv::putText(processedFrame, modeText, cv::Point(processedFrame.cols - 100, 30), 
-                   cv::FONT_HERSHEY_SIMPLEX, 1.0, cv::Scalar(0, 255, 0), 2);
-        
-        // Display frame if requested
+        // Display frame
         if (displayOutput) {
             try {
                 cv::imshow("Single Camera Detector", processedFrame);
-                
-                // Exit on ESC or 'q' key
                 int key = cv::waitKey(1);
                 if (key == 27 || key == 'q') {
                     isRunning = false;
                 }
-            } catch (const std::exception& e) {
+            } catch (const cv::Exception& e) { // Use cv::Exception
                 std::cerr << "Error displaying frame: " << e.what() << std::endl;
-                displayOutput = false; // Disable display on error
+                displayOutput = false; 
             }
         }
         
-        // Write frame to video if requested
-        if (saveOutput && videoWriter.isOpened()) {
+        // Write frame to video
+        if (saveOutput && videoWriterOpened) {
             try {
                 videoWriter.write(processedFrame);
-            } catch (const std::exception& e) {
+            } catch (const cv::Exception& e) { // Use cv::Exception
                 std::cerr << "Error writing frame to video: " << e.what() << std::endl;
-                saveOutput = false; // Disable video saving on error
+                saveOutput = false; 
             }
         }
-        
-        // Print progress every 100 frames
-        if (frameCount % 100 == 0) {
-            auto currentTime = std::chrono::high_resolution_clock::now();
-            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
-                currentTime - startTime).count() / 1000.0;
-            
-            std::cout << "Processed " << frameCount << " frames in " 
-                     << std::fixed << std::setprecision(1) << duration << " seconds ("
-                     << std::fixed << std::setprecision(1) << frameCount / duration << " FPS)" << std::endl;
-        }
-        
-        // Limit processing rate for display mode to avoid excessive CPU usage
-        if (displayOutput && fps > 60) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
+        // Stop loop if processor is no longer running
+        if (!cameraProcessor->isRunning()) {
+             isRunning = false;
         }
     }
     
-    // Calculate and print statistics
-    auto endTime = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
-        endTime - startTime).count() / 1000.0;
+    std::cout << "Detection loop finished." << std::endl;
     
-    std::cout << "\n=== Detection Statistics ===" << std::endl;
-    std::cout << "Total frames processed: " << frameCount << std::endl;
-    std::cout << "Detections: " << detectionCount << std::endl;
-    std::cout << "Average FPS: " << std::fixed << std::setprecision(1) 
-              << (frameCount > 0 ? totalFps / frameCount : 0) << std::endl;
-    std::cout << "Total processing time: " << std::fixed << std::setprecision(1) 
-              << duration << " seconds" << std::endl;
-    
-    // Release video writer and close windows
-    if (saveOutput && videoWriter.isOpened()) {
-        videoWriter.release();
-        std::cout << "Output video saved to " << outputFilePath << std::endl;
-    }
-    
-    if (displayOutput) {
-        cv::destroyAllWindows();
-    }
-    
-    // Stop the camera processor
+    // Cleanup
     if (cameraProcessor) {
         cameraProcessor->stop();
     }
-}
-
-cv::Mat SingleCameraDetector::processFrame(const cv::Mat& frame) {
-    // Check for valid input
-    if (frame.empty()) {
-        std::cerr << "Warning: Received empty frame in processFrame()" << std::endl;
-        return cv::Mat(); // Return empty mat to indicate error
+    if (videoWriterOpened) {
+        videoWriter.release();
     }
-
-    // Clone the frame to avoid modifying the original
-    cv::Mat outputFrame = frame.clone();
+    cv::destroyAllWindows();
     
-    // Run detection
-    std::vector<Detection> detections;
-    
-    if (model) {
-        try {
-            detections = model->processImage(frame, threshold);
-        } catch (const std::exception& e) {
-            std::cerr << "Error in model processing: " << e.what() << std::endl;
-        }
+    // Print summary
+    if (frameCount > 0) {
+        double avgFps = totalFpsAccumulator / frameCount;
+        std::cout << "Processed " << frameCount << " frames." << std::endl;
+        std::cout << "Average FPS: " << std::fixed << std::setprecision(2) << avgFps << std::endl;
     } else {
-        std::cerr << "Warning: Model is null in processFrame()" << std::endl;
+         std::cout << "No frames processed." << std::endl;
     }
-    
-    // Process detections
-    int personCount = 0;
-    
-    for (const auto& detection : detections) {
-        // Check if the detection is a person
-        if (detection.id == personClassId) {
-            personCount++;
-            
-            // Get bounding box coordinates
-            int x1 = static_cast<int>(detection.bbox.xmin);
-            int y1 = static_cast<int>(detection.bbox.ymin);
-            int x2 = static_cast<int>(detection.bbox.xmax);
-            int y2 = static_cast<int>(detection.bbox.ymax);
-            
-            // Ensure coordinates are within the frame
-            x1 = std::max(0, std::min(x1, frame.cols - 1));
-            y1 = std::max(0, std::min(y1, frame.rows - 1));
-            x2 = std::max(0, std::min(x2, frame.cols - 1));
-            y2 = std::max(0, std::min(y2, frame.rows - 1));
-            
-            // Draw bounding box
-            cv::rectangle(outputFrame, cv::Point(x1, y1), cv::Point(x2, y2), 
-                         cv::Scalar(0, 255, 0), 2);
-            
-            // Add label with confidence
-            std::string label = model ? model->getLabel(detection.id) : "Person";
-            label += " " + std::to_string(static_cast<int>(detection.score * 100)) + "%";
-            
-            int baseline = 0;
-            cv::Size textSize = cv::getTextSize(label, cv::FONT_HERSHEY_SIMPLEX, 
-                                               0.5, 1, &baseline);
-            
-            cv::rectangle(outputFrame, cv::Point(x1, y1 - textSize.height - 5),
-                         cv::Point(x1 + textSize.width, y1), 
-                         cv::Scalar(0, 255, 0), cv::FILLED);
-            
-            cv::putText(outputFrame, label, cv::Point(x1, y1 - 5), 
-                       cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 0), 1);
-        }
-    }
-    
-    // If people were detected, add count to the frame
-    if (personCount > 0) {
-        std::string countText = "People: " + std::to_string(personCount);
-        cv::putText(outputFrame, countText, cv::Point(10, frame.rows - 10), 
-                   cv::FONT_HERSHEY_SIMPLEX, 1.0, cv::Scalar(0, 0, 255), 2);
-    }
-    
-    return outputFrame;
 }
 
 float SingleCameraDetector::getFPS() const {
@@ -351,12 +241,15 @@ float SingleCameraDetector::getFPS() const {
 }
 
 bool SingleCameraDetector::isSourceCamera(const std::string& source) const {
-    // Try to parse source as an integer (camera index)
+    // Try to convert source to integer (camera index)
     try {
         std::stoi(source);
-        return true;
-    } catch (const std::exception&) {
-        // If it's not an integer, check if it's an existing file
-        return !fs::exists(source);
+        return true; // Successfully converted, assume it's a camera index
+    } catch (const std::invalid_argument& ia) {
+        // Not an integer, assume it's a file path
+        return false;
+    } catch (const std::out_of_range& oor) {
+        // Integer but out of range, could be a file path with numbers
+        return false;
     }
 } 

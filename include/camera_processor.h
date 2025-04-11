@@ -12,6 +12,13 @@
 #include "model.h"
 #include "utils.h"
 
+// Forward declaration for TFLite interpreter if not disabled
+#ifndef DISABLE_TENSORFLOW
+namespace tflite {
+    class Interpreter;
+}
+#endif
+
 /**
  * @brief Result structure for processed frames
  */
@@ -35,24 +42,6 @@ public:
      * @param threshold Detection threshold
      */
     CameraProcessor(int cameraId, std::shared_ptr<Model> model, int personClassId = 0, float threshold = 0.5);
-
-    /**
-     * @brief Constructor for video source with target FPS and dimensions
-     * @param cameraId Camera identifier/index
-     * @param targetFps Target FPS
-     * @param targetWidth Target width
-     * @param targetHeight Target height
-     */
-    CameraProcessor(int cameraId, int targetFps, int targetWidth, int targetHeight);
-    
-    /**
-     * @brief Constructor for video file with target FPS and dimensions
-     * @param videoPath Path to the video file
-     * @param targetFps Target FPS
-     * @param targetWidth Target width
-     * @param targetHeight Target height
-     */
-    CameraProcessor(const std::string& videoPath, int targetFps, int targetWidth, int targetHeight);
 
     /**
      * @brief Destructor
@@ -143,6 +132,13 @@ public:
      */
     bool isRunning() const { return running; }
 
+    /**
+     * @brief Perform inference on a frame using the local interpreter
+     * @param frame Input frame
+     * @return Vector of detections
+     */
+    std::vector<Detection> performInference(const cv::Mat& frame);
+
 private:
     /**
      * @brief Thread function to capture frames from the camera
@@ -170,6 +166,11 @@ private:
     std::atomic<bool> running;
     std::thread captureThread;
     std::thread processingThread;
+
+#ifndef DISABLE_TENSORFLOW
+    // Each processor gets its own interpreter
+    std::unique_ptr<tflite::Interpreter> interpreter;
+#endif
 
     // Frame and result queues
     std::queue<cv::Mat> frameQueue;

@@ -1,85 +1,64 @@
-cmake_minimum_required(VERSION 3.10)
-project(smart_office_security)
+# Set minimum required CMake version
+cMAKE_MINIMUM_REQUIRED(VERSION 3.10)
+
+# Enable project VERSION keyword
+cmake_policy(SET CMP0048 NEW)
+
+# Set project name and version
+project(dual_camera_detector VERSION 1.0)
 
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_STANDARD_REQUIRED True)
 
-# Find required packages
+# Find OpenCV
 find_package(OpenCV REQUIRED)
+
+# Find Threads
 find_package(Threads REQUIRED)
 
-# Check if TensorFlow has been built
-set(TENSORFLOW_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/external/tensorflow")
-set(TENSORFLOW_LITE_ROOT "${TENSORFLOW_ROOT}/tensorflow/lite")
-set(TENSORFLOW_LITE_LIB "${TENSORFLOW_LITE_ROOT}/tools/make/gen/linux_x86_64/lib/libtensorflow-lite.a")
-
-# Check if TensorFlow is available
-if(EXISTS ${TENSORFLOW_LITE_LIB})
-    message(STATUS "TensorFlow Lite library found: ${TENSORFLOW_LITE_LIB}")
-    # Remove the DISABLE_TENSORFLOW definition
-    set(USE_TENSORFLOW TRUE)
-else()
-    message(WARNING "TensorFlow Lite library not found. Using mock implementation.")
-    # Continue using the mock implementation
-    add_definitions(-DDISABLE_TENSORFLOW)
-    set(USE_TENSORFLOW FALSE)
-endif()
-
-# TensorFlow include directories
-if(USE_TENSORFLOW)
-    set(TENSORFLOW_INCLUDE_DIRS
-        ${TENSORFLOW_ROOT}
-        ${TENSORFLOW_ROOT}/tensorflow/lite/tools/make/downloads/flatbuffers/include
-        ${TENSORFLOW_ROOT}/tensorflow/lite/tools/make/downloads/absl
-    )
-endif()
-
-# Edge TPU library path
-set(EDGETPU_LIBRARY_PATH "/usr/lib/x86_64-linux-gnu/libedgetpu.so")
-
-# Include directories
+# Add include directories
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${OpenCV_INCLUDE_DIRS}
+# TensorFlow Lite source directory
+/home/emrek/cursor/smart_office_security/smart_office_security/external/tensorflow
+
+# FlatBuffers include path
+/home/emrek/cursor/smart_office_security/smart_office_security/external/tensorflow/tensorflow/lite/tools/make/downloads/flatbuffers/include
 )
 
-# Add TensorFlow include directories if available
-if(USE_TENSORFLOW)
-    include_directories(${TENSORFLOW_INCLUDE_DIRS})
-endif()
+# Add source files
+add_executable(dual_camera_detector 
+    src/main.cpp 
+    src/dual_camera_detector.cpp 
+    src/camera_processor.cpp 
+    src/single_camera_detector.cpp
+    src/model.cpp
+)
 
-# Source files
-file(GLOB SOURCES "src/*.cpp")
+# Add Edge TPU library path
+# set(EDGETPU_LIBRARY_PATH "/usr/lib/x86_64-linux-gnu/libedgetpu.so") # Commented out original
+set(EDGETPU_LIBRARY_NAME "edgetpu") # Link by name
 
-# Create executable
-add_executable(dual_camera_detector ${SOURCES})
+# TensorFlow Lite library path (Point to downloaded library)
+set(TFLITE_LIBRARY_PATH "${CMAKE_CURRENT_SOURCE_DIR}/libs/libtensorflowlite.so") # Path to downloaded library
+# set(TFLITE_LIBRARY_NAME "tensorflowlite") # Commented out linking by name
 
 # Link libraries
-if(USE_TENSORFLOW)
-    # Check if Edge TPU library exists
-    if(EXISTS ${EDGETPU_LIBRARY_PATH})
-        message(STATUS "Edge TPU library found: ${EDGETPU_LIBRARY_PATH}")
-        target_link_libraries(dual_camera_detector
-            ${OpenCV_LIBS}
-            ${CMAKE_THREAD_LIBS_INIT}
-            ${TENSORFLOW_LITE_LIB}
-            ${EDGETPU_LIBRARY_PATH}
-        )
-    else()
-        message(WARNING "Edge TPU library not found. Only CPU inference will be available.")
-        target_link_libraries(dual_camera_detector
-            ${OpenCV_LIBS}
-            ${CMAKE_THREAD_LIBS_INIT}
-            ${TENSORFLOW_LITE_LIB}
-        )
-    endif()
-else()
-    target_link_libraries(dual_camera_detector
-        ${OpenCV_LIBS}
-        ${CMAKE_THREAD_LIBS_INIT}
-    )
-endif()
+target_link_libraries(dual_camera_detector 
+    ${OpenCV_LIBS} 
+    ${CMAKE_THREAD_LIBS_INIT}
+#    ${EDGETPU_LIBRARY_PATH} # Commented out original
+    ${EDGETPU_LIBRARY_NAME}    # Link edgetpu using name
+    ${TFLITE_LIBRARY_PATH}     # Link tensorflowlite using path
+)
+
+# Optional: Enable specific optimizations if needed
+# set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3")
+
+# Define compiler definitions (remove the DISABLE_TENSORFLOW)
+# add_definitions(-DDISABLE_TENSORFLOW)
 
 # Installation
 install(TARGETS dual_camera_detector DESTINATION bin) 

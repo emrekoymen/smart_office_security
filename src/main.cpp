@@ -87,7 +87,16 @@ int main(int argc, char* argv[]) {
     std::filesystem::path currentPath = std::filesystem::current_path();
     
     // Path to model and labels
-    std::string modelPath = (std::filesystem::path("../models/ssd_mobilenet_v2_coco_quant_postprocess_edgetpu.tflite")).string();
+    // Select model based on forceCPU flag
+    std::string modelFileName;
+    if (forceCPU) {
+        modelFileName = "../models/ssd_mobilenet_v2_coco_quant_postprocess.tflite";
+        std::cout << "Using CPU-specific model." << std::endl;
+    } else {
+        modelFileName = "../models/ssd_mobilenet_v2_coco_quant_postprocess_edgetpu.tflite";
+        std::cout << "Attempting to use Edge TPU model." << std::endl;
+    }
+    std::string modelPath = (std::filesystem::path(modelFileName)).string();
     std::string labelsPath = (std::filesystem::path("../models/coco_labels.txt")).string();
     
     std::cout << "Model path: " << modelPath << std::endl;
@@ -124,7 +133,17 @@ int main(int argc, char* argv[]) {
             // Create and run the dual camera detector
             DualCameraDetector detector(cmdArgs);
             
-            detector.run();
+            // Initialize the detector first
+            if (!detector.initialize()) {
+                std::cerr << "Failed to initialize detector" << std::endl;
+                return 1;
+            }
+            
+            // Now run the detector
+            if (!detector.run()) { 
+                std::cerr << "Detector run failed" << std::endl;
+                return 1;
+            }
         }
         
         return 0;

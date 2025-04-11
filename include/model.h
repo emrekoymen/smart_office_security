@@ -61,13 +61,23 @@ public:
      */
     ~Model();
 
+#ifndef DISABLE_TENSORFLOW
     /**
-     * @brief Process an image with the model
-     * @param frame Input frame
-     * @param threshold Detection threshold
-     * @return Vector of detections
+     * @brief Process an image frame to detect objects.
+     * Requires an interpreter instance to be available.
+     * @param frame The input image frame (expects BGR format).
+     * @param threshold Minimum confidence score for detections.
+     * @return A vector of detected objects.
      */
-    std::vector<Detection> processImage(const cv::Mat& frame, float threshold = 0.5);
+    std::vector<Detection> processImage(const cv::Mat& frame, float threshold);
+
+    /**
+     * @brief Create a new TFLite interpreter instance based on the loaded model.
+     * Each thread should create its own interpreter.
+     * @return A unique pointer to the created interpreter, or nullptr on failure.
+     */
+    std::unique_ptr<tflite::Interpreter> createInterpreter();
+#endif
 
     /**
      * @brief Load labels from a file
@@ -84,10 +94,10 @@ public:
     std::string getLabel(int id) const;
 
     /**
-     * @brief Check if the model is using the Edge TPU
-     * @return True if using TPU, false if using CPU
+     * @brief Check if the model is configured to attempt using the Edge TPU
+     * @return True if TPU usage is intended, false if CPU is forced
      */
-    bool isUsingTPU() const { return usingTPU; }
+    bool isUsingTPU() const { return useTPU; }
 
     /**
      * @brief Get the input height of the model
@@ -111,28 +121,32 @@ private:
     // Labels map
     std::map<int, std::string> labels;
     
-    // Flag to track whether we're using the Edge TPU or CPU
-    bool usingTPU;
-    
     // Input and output tensor dimensions
     int inputHeight;
     int inputWidth;
     int inputChannels;
 
 #ifndef DISABLE_TENSORFLOW
-    // TFLite model and interpreter
+    // TFLite model data (shared across interpreters)
     std::unique_ptr<tflite::FlatBufferModel> model;
-    std::unique_ptr<tflite::Interpreter> interpreter;
-    
-    // Edge TPU context
+    // TFLite interpreter instance (used by default processImage)
+    // std::unique_ptr<tflite::Interpreter> interpreter;
+
+    // Hold the Edge TPU context if initialized successfully
     std::shared_ptr<edgetpu::EdgeTpuContext> edgetpuContext;
 
     /**
      * @brief Try to initialize Edge TPU
      * @param modelPath Path to the model file
-     * @return True if successful, false otherwise
+     * @return Shared pointer to the Edge TPU context if successful, nullptr otherwise.
      */
-    bool initializeEdgeTPU(const std::string& modelPath);
+    std::shared_ptr<edgetpu::EdgeTpuContext> initializeEdgeTPU(const std::string& modelPath);
+    
+    // Flag indicating if TPU should be used (based on forceCPU and TPU availability)
+    bool useTPU;
+#else
+    // Keep track of forced CPU mode even if TF is disabled
+    bool useTPU; // Will be false if TF disabled or forceCPU is true
 #endif
 };
 
