@@ -5,6 +5,14 @@ Dual Camera Person Detection with Google Coral Edge TPU
 This script uses a pre-trained MobileNet SSD model on the Coral Edge TPU
 to detect persons in two simultaneous video streams.
 It processes both camera feeds in parallel and displays them side-by-side.
+
+Performance Optimizations:
+- Efficient frame queue management to minimize latency
+- Optimized display pipeline with frame rate control
+- Smart result retrieval to always get the most recent frame
+- Reduced CPU usage with controlled frame skipping
+- Display resolution of 1280x480 for dual 640x480 camera feeds
+- Maintains detection input resolution at 300x300 for optimal model performance
 """
 
 import argparse
@@ -46,6 +54,16 @@ os.makedirs("logs", exist_ok=True)
 class CameraProcessor:
     """
     Class to handle processing of a single camera feed
+    
+    This class manages camera capture, frame processing, and object detection
+    in a separate thread. It implements efficient frame queue management to
+    minimize latency and maintain real-time processing.
+    
+    Key optimizations:
+    - Adaptive frame skipping when queues are full
+    - Efficient frame resizing with appropriate interpolation methods
+    - Smart queue management to prevent backlog and maintain freshness
+    - Low-latency result retrieval for real-time display
     """
     def __init__(self, camera_id, source, model_path, labels_path, threshold=0.5, person_class_id=0):
         self.camera_id = camera_id
@@ -174,7 +192,21 @@ class CameraProcessor:
         logger.info(f"Camera {self.camera_id}: Processing stopped")
     
     def capture_frames(self):
-        """Thread function to capture frames from the camera"""
+        """
+        Thread function to capture frames from the camera
+        
+        This method continuously captures frames from the camera and adds them
+        to the frame queue for processing. It implements several optimizations:
+        
+        1. Adaptive frame skipping when the queue is getting full
+        2. Queue management to prevent backlog and maintain freshness
+        3. Non-blocking queue operations to prevent thread blocking
+        4. Error handling for camera disconnection and frame reading failures
+        
+        These optimizations ensure that the processing pipeline always has
+        the most recent frames available, minimizing latency between
+        capture and display.
+        """
         frame_skip = 0  # For frame skipping if needed
         
         while self.running:
@@ -212,7 +244,22 @@ class CameraProcessor:
                 pass
     
     def process_frames(self):
-        """Thread function to process frames from the queue"""
+        """
+        Thread function to process frames from the queue
+        
+        This method retrieves frames from the frame queue, performs object
+        detection, and adds the results to the result queue. It implements
+        several optimizations:
+        
+        1. Efficient frame resizing using INTER_AREA for best detection quality
+        2. Conditional resizing to avoid unnecessary operations
+        3. Smart result queue management to prevent backlog
+        4. Non-blocking queue operations to maintain responsiveness
+        5. Optimized detection box drawing only when detections are present
+        
+        These optimizations ensure efficient processing while maintaining
+        detection accuracy and minimizing CPU usage.
+        """
         while self.running:
             try:
                 frame = self.frame_queue.get(timeout=0.01)  # Shorter timeout for responsiveness
@@ -313,7 +360,21 @@ class CameraProcessor:
         return detect.get_objects(self.interpreter, self.threshold)
     
     def get_latest_result(self):
-        """Get the latest processed result"""
+        """
+        Get the latest processed result
+        
+        This method efficiently retrieves the most recent frame from the result queue
+        without waiting for older frames to be processed. It implements a smart
+        queue draining approach that:
+        
+        1. Checks if multiple results are available
+        2. If so, drains all but the most recent one to minimize latency
+        3. Returns the most recent frame for display
+        4. Properly handles empty queues with appropriate error handling
+        
+        This approach ensures that the display always shows the most current
+        detection results, even if processing is slower than capture.
+        """
         # More efficient way to get the latest result
         # Only get the most recent frame instead of draining the queue
         try:
@@ -332,7 +393,21 @@ class CameraProcessor:
 
 
 class DualCameraDetector:
-    """Main class for dual camera person detection"""
+    """
+    Main class for dual camera person detection
+    
+    This class manages two camera processors and combines their outputs
+    into a single display. It implements an optimized display pipeline
+    with frame rate control for smooth visualization.
+    
+    Key features:
+    - Parallel processing of two camera feeds
+    - Optimized display pipeline with controlled frame rate
+    - Side-by-side display of camera feeds at 1280x480 resolution
+    - Efficient frame resizing for display while maintaining detection quality
+    - Real-time FPS monitoring and display
+    - Adaptive frame skipping to maintain responsiveness
+    """
     def __init__(self, args):
         self.args = args
         self.camera1 = None
@@ -421,7 +496,23 @@ class DualCameraDetector:
         return True
     
     def run(self):
-        """Run the detector"""
+        """
+        Run the detector
+        
+        This method implements the main detection and display loop with
+        several optimizations for performance:
+        
+        1. Frame rate control to maintain consistent display FPS
+        2. Efficient frame resizing using INTER_NEAREST for display
+        3. Smart result retrieval to always get the most recent frames
+        4. Optimized display pipeline with minimal CPU usage
+        5. Real-time FPS calculation and display
+        6. Side-by-side display of both camera feeds at 1280x480 resolution
+        
+        The method balances detection accuracy with display performance
+        by using different resolutions for detection (300x300) and
+        display (640x480 per camera).
+        """
         if not self.display_available and not self.args.no_display:
             logger.warning("Display not available. Running in headless mode.")
             self.args.no_display = True
