@@ -104,6 +104,8 @@ class CameraProcessor:
             except Exception as e:
                 logger.error(f"Camera {self.camera_id}: Error loading model: {e}")
                 self.interpreter = None
+                # Set a default input size even if model loading fails
+                self.input_size = (300, 300)
         else:
             # Mock interpreter for testing without Coral
             self.interpreter = None
@@ -733,31 +735,11 @@ def main():
     """Main function"""
     args = parse_args()
     
-    # Check if Edge TPU is available
-    if not HAVE_CORAL:
-        logger.warning("PyCoral not found. Running in mock detection mode.")
-    
-    # Check if model file exists
-    if not os.path.exists(args.model):
-        logger.warning(f"Model file not found: {args.model}")
-        logger.warning("Creating models directory and using mock detection mode.")
-        os.makedirs("models", exist_ok=True)
-        
-        # Create an empty model file for mock detection
-        with open(args.model, "w") as f:
-            f.write("Mock model file for testing")
-    
-    # Check if labels file exists
-    if not os.path.exists(args.labels):
-        logger.warning(f"Labels file not found: {args.labels}")
-        logger.warning("Creating a default labels file.")
-        os.makedirs(os.path.dirname(args.labels), exist_ok=True)
-        
-        # Create a default labels file
-        with open(args.labels, "w") as f:
-            f.write("0 person\n1 bicycle\n2 car\n3 motorcycle\n4 airplane\n5 bus\n6 train\n")
-    
-    # Create detector
+    # Set QT_QPA_PLATFORM to offscreen if --no-display is specified
+    # This prevents Qt errors when running without a display server
+    if args.no_display:
+        os.environ['QT_QPA_PLATFORM'] = 'offscreen'
+
     detector = DualCameraDetector(args)
     
     # Initialize detector

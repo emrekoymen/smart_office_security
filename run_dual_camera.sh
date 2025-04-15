@@ -82,4 +82,13 @@ CMD="$CMD --output-dir=$OUTPUT_DIR"
 echo "Running: $CMD"
 
 # Run the command
-eval "$CMD" 
+if [ "$DISPLAY" = "false" ]; then
+  # Get conda environment path (assuming it's activated)
+  CONDA_ENV_PATH=$(conda info --base)/envs/smart_office
+  # Set Qt environment variables for headless operation
+  export QT_QPA_PLATFORM=offscreen
+  export QT_PLUGIN_PATH=$CONDA_ENV_PATH/lib/qt/plugins
+  eval "$CMD"
+else
+  eval "$CMD"
+fi 
